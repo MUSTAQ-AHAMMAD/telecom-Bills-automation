@@ -1,3 +1,4 @@
+import asyncio
 import os
 import shutil
 import tempfile
@@ -15,7 +16,7 @@ from typing import Optional
 # selects the loop via an explicit factory function, bypassing the global
 # asyncio policy entirely.
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -24,6 +25,7 @@ from .config import settings, ENTITY_NAMES, CARRIER_NAMES, ENTITY_COLORS, CARRIE
 from .data_store import load_accounts, clear_accounts
 from .file_organizer import list_archived_invoices, resolve_archived_invoice_path, clear_all_invoices
 from .jobs import job_manager
+from . import live_control
 from .master_data import (
     import_master_excel,
     import_store_sheet,
@@ -266,6 +268,62 @@ def submit_otp(job_id: str, payload: OtpSubmission):
         raise HTTPException(status_code=400, detail="Job is not waiting for an OTP.")
     job.submit_otp(payload.otp)
     return {"ok": True}
+
+
+@app.websocket("/ws/jobs/{job_id}/live")
+async def job_live_control(websocket: WebSocket, job_id: str):
+    """
+    Streams the automation browser's screen (via CDP screencast) to a remote
+    viewer and relays their mouse/keyboard input back into it — lets someone
+    on a different machine than the server directly see and drive the
+    browser doing a portal login, instead of only relaying OTP codes through
+    the normal form. Only one viewer at a time per job.
+    """
+    await websocket.accept()
+    session = live_control.attach_viewer(job_id, websocket)
+    if not session:
+        await websocket.send_json({
+            "type": "error",
+            "message": "No active browser for this job (it may have finished), or someone else is already viewing it.",
+        })
+        await websocket.close()
+        return
+
+    cdp = session["cdp"]
+
+    def on_frame(params):
+        async def relay():
+            try:
+                await websocket.send_json({
+                    "type": "frame",
+                    "data": params["data"],
+                    "width": params["metadata"].get("deviceWidth"),
+                    "height": params["metadata"].get("deviceHeight"),
+                })
+                await cdp.send("Page.screencastFrameAck", {"sessionId": params["sessionId"]})
+            except Exception:
+                pass
+        asyncio.create_task(relay())
+
+    cdp.on("Page.screencastFrame", on_frame)
+    session["streaming"] = True
+    try:
+        await cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 70, "everyNthFrame": 1})
+        while True:
+            msg = await websocket.receive_json()
+            await live_control.dispatch_input(cdp, msg)
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        session["streaming"] = False
+        try:
+            await cdp.send("Page.stopScreencast")
+        except Exception:
+            pass
+        cdp.remove_listener("Page.screencastFrame", on_frame)
+        live_control.detach_viewer(job_id)
 
 
 @app.get("/api/invoice/{account_number}")

@@ -1,0 +1,8 @@
+backend/.env
+backend/data/Root/
+backend/data/accounts.json
+backend/data/master.db
+backend/venv/
+backend/__pycache__/
+backend/app/__pycache__/
+*.pyc

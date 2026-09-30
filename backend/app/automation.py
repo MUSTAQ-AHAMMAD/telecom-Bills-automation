@@ -10,6 +10,7 @@ from .file_organizer import invoice_file_path, find_existing_invoice_for_month
 from .jobs import Job
 from .models import Account
 from .data_store import save_accounts_for_account_slot
+from . import live_control
 
 
 def _bucket_status(raw_status: str) -> str:
@@ -348,75 +349,79 @@ async def run_scrape_job(job: Job, entity: str, provider: str, account_slot: int
             browser = await p.chromium.launch(headless=settings.headless)
             context = await browser.new_context(accept_downloads=True)
             page = await context.new_page()
-
-            job.message = f"Navigating to {provider} portal..."
-            await page.goto(carrier_settings.portal_url, timeout=30000)
-
-            job.message = f"Logging in to {provider} for {entity} ({credentials.label or f'Account {account_slot}'})..."
-            await page.fill(carrier_settings.selector_username_input, credentials.username)
-            await page.fill(carrier_settings.selector_password_input, credentials.password)
-            await page.click(carrier_settings.selector_login_button)
-
-            otp_appeared = await _wait_for_selector_optional(
-                page, carrier_settings.selector_otp_input, timeout=15000
-            )
-            if otp_appeared:
-                otp = await job.wait_for_otp(settings.otp_timeout_seconds)
-                await page.fill(carrier_settings.selector_otp_input, otp)
-                await page.click(carrier_settings.selector_otp_submit_button)
-
-            job.status = "running"
-
-            if carrier_settings.selector_post_login_dismiss_button:
-                await _wait_for_selector_optional(
-                    page, carrier_settings.selector_post_login_dismiss_button, timeout=8000
-                )
-                try:
-                    await page.click(carrier_settings.selector_post_login_dismiss_button, timeout=3000)
-                except PlaywrightTimeoutError:
-                    pass  # no ad/interstitial this time — nothing to dismiss
-
-            job.message = f"Logged in to {provider}. Navigating to billing accounts..."
-
-            if carrier_settings.selector_nav_menu_item:
-                try:
-                    await page.click(carrier_settings.selector_nav_menu_item, timeout=10000)
-                    if carrier_settings.selector_nav_submenu_item:
-                        await page.click(carrier_settings.selector_nav_submenu_item, timeout=10000)
-                except PlaywrightTimeoutError:
-                    # Best-effort: maybe login already landed on the right
-                    # page and this nav item genuinely isn't there/needed.
-                    pass
-
-            job.message = f"Logged in to {provider}. Loading billing accounts..."
+            await live_control.register_page(job.job_id, page)
 
             try:
-                await page.wait_for_selector(carrier_settings.selector_accounts_table_row, timeout=45000)
-            except PlaywrightTimeoutError:
-                # A bare timeout doesn't say what's actually on screen (a WAF
-                # block page? an infinite loading spinner? a cookie banner
-                # covering the list?) — capture that so it's diagnosable
-                # instead of needing another blind round-trip.
-                diag_title = await page.title()
-                diag_text = (await page.evaluate("document.body.innerText.slice(0, 400)")).strip()
-                raise RuntimeError(
-                    f"Accounts list never appeared (selector: {carrier_settings.selector_accounts_table_row!r}). "
-                    f"Page title: {diag_title!r}. Page text: {diag_text!r}"
+                job.message = f"Navigating to {provider} portal..."
+                await page.goto(carrier_settings.portal_url, timeout=30000)
+
+                job.message = f"Logging in to {provider} for {entity} ({credentials.label or f'Account {account_slot}'})..."
+                await page.fill(carrier_settings.selector_username_input, credentials.username)
+                await page.fill(carrier_settings.selector_password_input, credentials.password)
+                await page.click(carrier_settings.selector_login_button)
+
+                otp_appeared = await _wait_for_selector_optional(
+                    page, carrier_settings.selector_otp_input, timeout=15000
                 )
-            job.message = f"Loading full {provider} accounts list..."
-            await _load_all_rows(page, carrier_settings.selector_scroll_container, carrier_settings.selector_accounts_table_row)
-            rows = await page.query_selector_all(carrier_settings.selector_accounts_table_row)
+                if otp_appeared:
+                    otp = await job.wait_for_otp(settings.otp_timeout_seconds)
+                    await page.fill(carrier_settings.selector_otp_input, otp)
+                    await page.click(carrier_settings.selector_otp_submit_button)
 
-            accounts: List[Account] = []
-            for row in rows:
-                accounts.append(await _scrape_row(row, entity, provider, account_slot))
+                job.status = "running"
 
-            job.message = f"Downloading {provider} invoices for {entity}..."
-            for account, row in zip(accounts, rows):
-                dest_path = await _download_invoice(page, row, account, carrier_settings)
-                account.invoice_path = dest_path
+                if carrier_settings.selector_post_login_dismiss_button:
+                    await _wait_for_selector_optional(
+                        page, carrier_settings.selector_post_login_dismiss_button, timeout=8000
+                    )
+                    try:
+                        await page.click(carrier_settings.selector_post_login_dismiss_button, timeout=3000)
+                    except PlaywrightTimeoutError:
+                        pass  # no ad/interstitial this time — nothing to dismiss
 
-            await browser.close()
+                job.message = f"Logged in to {provider}. Navigating to billing accounts..."
+
+                if carrier_settings.selector_nav_menu_item:
+                    try:
+                        await page.click(carrier_settings.selector_nav_menu_item, timeout=10000)
+                        if carrier_settings.selector_nav_submenu_item:
+                            await page.click(carrier_settings.selector_nav_submenu_item, timeout=10000)
+                    except PlaywrightTimeoutError:
+                        # Best-effort: maybe login already landed on the right
+                        # page and this nav item genuinely isn't there/needed.
+                        pass
+
+                job.message = f"Logged in to {provider}. Loading billing accounts..."
+
+                try:
+                    await page.wait_for_selector(carrier_settings.selector_accounts_table_row, timeout=45000)
+                except PlaywrightTimeoutError:
+                    # A bare timeout doesn't say what's actually on screen (a WAF
+                    # block page? an infinite loading spinner? a cookie banner
+                    # covering the list?) — capture that so it's diagnosable
+                    # instead of needing another blind round-trip.
+                    diag_title = await page.title()
+                    diag_text = (await page.evaluate("document.body.innerText.slice(0, 400)")).strip()
+                    raise RuntimeError(
+                        f"Accounts list never appeared (selector: {carrier_settings.selector_accounts_table_row!r}). "
+                        f"Page title: {diag_title!r}. Page text: {diag_text!r}"
+                    )
+                job.message = f"Loading full {provider} accounts list..."
+                await _load_all_rows(page, carrier_settings.selector_scroll_container, carrier_settings.selector_accounts_table_row)
+                rows = await page.query_selector_all(carrier_settings.selector_accounts_table_row)
+
+                accounts: List[Account] = []
+                for row in rows:
+                    accounts.append(await _scrape_row(row, entity, provider, account_slot))
+
+                job.message = f"Downloading {provider} invoices for {entity}..."
+                for account, row in zip(accounts, rows):
+                    dest_path = await _download_invoice(page, row, account, carrier_settings)
+                    account.invoice_path = dest_path
+
+                await browser.close()
+            finally:
+                await live_control.unregister(job.job_id)
 
         save_accounts_for_account_slot(entity, provider, account_slot, accounts)
         job.accounts = accounts
