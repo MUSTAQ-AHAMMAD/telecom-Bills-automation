@@ -1,0 +1,2167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Telecom Billing Automation Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  html, body { background: #f8fafc; -webkit-font-smoothing: antialiased; height: 100%; }
+  .spinner {
+    border: 3px solid rgba(255,255,255,0.35);
+    border-top-color: #fff;
+    border-radius: 50%;
+    width: 16px; height: 16px;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .card { box-shadow: 0 1px 2px rgba(16,24,40,0.04), 0 1px 3px rgba(16,24,40,0.06); }
+  .card-hover:hover { box-shadow: 0 8px 16px rgba(16,24,40,0.08), 0 2px 6px rgba(16,24,40,0.06); transform: translateY(-1px); }
+  .tab-btn { transition: background-color .15s ease, color .15s ease, border-color .15s ease, transform .1s ease; }
+  .tab-btn:active { transform: scale(0.97); }
+  ::-webkit-scrollbar { height: 8px; width: 8px; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+  /* Sidebar nav */
+  .nav-item {
+    display: flex; align-items: center; gap: 0.65rem;
+    padding: 0.6rem 0.85rem; border-radius: 0.7rem;
+    color: #94a3b8; font-size: 0.875rem; font-weight: 500;
+    transition: background-color .15s ease, color .15s ease;
+    width: 100%; text-align: left;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.06); color: #e2e8f0; }
+  .nav-item.nav-item-active { background: rgba(99,102,241,0.18); color: #fff; }
+  .nav-item svg { flex-shrink: 0; }
+
+  /* View fade-in on switch */
+  .view { animation: viewFadeIn .25s ease; }
+  @keyframes viewFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Table row entrance */
+  tbody tr { animation: rowFadeIn .2s ease; }
+  @keyframes rowFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  button, select, input { transition: box-shadow .15s ease, background-color .15s ease, border-color .15s ease, transform .05s ease; }
+  button:active { transform: translateY(0.5px); }
+
+  .sortable-th .sort-arrow { display: inline-block; width: 0.9em; opacity: 0.35; }
+  .sortable-th.sort-active .sort-arrow { opacity: 1; color: #4f46e5; }
+</style>
+</head>
+<body class="bg-slate-50 text-gray-900 font-sans">
+
+  <div class="flex h-screen overflow-hidden">
+
+    <!-- Sidebar -->
+    <aside class="w-60 shrink-0 flex flex-col" style="background:#0f172a">
+      <div class="px-5 py-5 border-b border-white/10">
+        <h1 class="text-white font-bold text-base tracking-tight leading-tight">Billing Automation</h1>
+        <p class="text-xs text-slate-500 mt-1">Multi-entity · multi-carrier</p>
+      </div>
+      <nav class="flex-1 px-3 py-4 space-y-1">
+        <button data-view="dashboard" class="nav-item">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12l2-2 7-7 7 7 2 2M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Dashboard
+        </button>
+        <button data-view="archive" class="nav-item">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Invoice Archive
+        </button>
+        <button data-view="master" class="nav-item">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Master Data
+        </button>
+      </nav>
+      <div class="px-5 py-4 border-t border-white/10 text-xs text-slate-600">Local automation · v1</div>
+    </aside>
+
+    <!-- Main column -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+
+      <!-- Top bar -->
+      <header class="shrink-0 bg-white/90 backdrop-blur border-b border-gray-100 px-8 py-4 flex items-center justify-between gap-4">
+        <h2 id="viewTitle" class="text-lg font-bold tracking-tight text-gray-900">Dashboard</h2>
+        <div id="dashboardActions" class="flex gap-3">
+          <button id="refreshBtn"
+            class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white shadow-sm transition disabled:opacity-60 disabled:cursor-not-allowed hover:brightness-110"
+            style="background:linear-gradient(135deg,#4f46e5,#7c3aed)">
+            <span id="refreshSpinner" class="spinner hidden"></span>
+            <span id="refreshLabel">Refresh Data</span>
+          </button>
+          <div class="relative">
+            <button id="downloadAllBtn"
+              class="inline-flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 transition px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm">
+              Download All Invoices
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div id="downloadAllMenu" class="hidden absolute right-0 mt-1.5 w-52 bg-white border border-gray-200 shadow-lg rounded-xl py-1.5 z-20">
+              <button data-status="" class="download-all-option w-full text-left px-3.5 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg mx-1 w-[calc(100%-8px)]">All Invoices</button>
+              <button data-status="Paid" class="download-all-option w-full text-left px-3.5 py-2 text-sm text-emerald-700 hover:bg-emerald-50 rounded-lg mx-1 w-[calc(100%-8px)]">Paid Only</button>
+              <button data-status="Unpaid" class="download-all-option w-full text-left px-3.5 py-2 text-sm text-amber-700 hover:bg-amber-50 rounded-lg mx-1 w-[calc(100%-8px)]">Unpaid &amp; Overdue Only</button>
+            </div>
+          </div>
+          <button id="clearDataBtnDashboard"
+            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border border-rose-200 text-rose-600 bg-white hover:bg-rose-50 shadow-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6h16z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Clear Data
+          </button>
+        </div>
+      </header>
+
+      <!-- Scrollable content -->
+      <main class="flex-1 overflow-y-auto px-8 py-6">
+
+      <div id="view-dashboard" class="view space-y-6">
+
+        <!-- Navigation: Entity -> Carrier -> Account, three tiers -->
+        <div class="space-y-3">
+          <div id="entityTabs" class="flex flex-wrap gap-2"></div>
+          <div id="carrierTabs" class="hidden flex-wrap gap-2 pl-1"></div>
+          <div id="accountTabs" class="hidden flex-wrap gap-2 pl-1"></div>
+        </div>
+
+    <!-- Status banner -->
+    <div id="statusBanner" class="hidden rounded-xl px-4 py-3 text-sm border"></div>
+
+    <!-- Filters: control every report/visualization below (cards, donut,
+         Top Locations/Stores, carrier chart) as well as the accounts table
+         at the bottom — placed up top so they're visible right alongside
+         the reports they scope, not just next to the table. -->
+    <div class="card bg-white border border-gray-100 rounded-2xl p-4 flex flex-wrap gap-3 items-center">
+      <div class="relative flex-1 min-w-[200px]">
+        <input id="searchInput" type="text" placeholder="Search by account number…"
+          class="w-full bg-gray-50 border border-gray-200 rounded-xl pl-3 pr-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white" />
+      </div>
+      <select id="statusFilter"
+        class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <option value="">All Statuses</option>
+        <option value="Paid">Paid</option>
+        <option value="Unpaid">Unpaid &amp; Overdue</option>
+      </select>
+      <select id="monthFilter"
+        class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <option value="">All Months</option>
+      </select>
+      <select id="accountFilter"
+        class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <option value="">All Accounts</option>
+      </select>
+      <select id="locationFilter"
+        class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <option value="">All Locations</option>
+      </select>
+      <select id="branchFilter"
+        class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <option value="">All Stores</option>
+      </select>
+      <button id="clearFiltersBtn" class="text-sm text-gray-500 hover:text-gray-800 underline underline-offset-2">
+        Clear filters
+      </button>
+      <button id="exportAccountsBtn"
+        class="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shadow-sm">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Export CSV
+      </button>
+    </div>
+
+    <!-- Overall analytics cards (Paid / Unpaid merged — Overdue folded in) -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div class="card card-hover bg-white border border-gray-100 rounded-2xl p-5 transition">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+          <p class="text-gray-500 text-sm font-medium">Total Paid Bills</p>
+        </div>
+        <p id="paidCount" class="text-3xl font-bold text-gray-900">0</p>
+        <p id="paidAmount" class="text-gray-400 text-sm mt-1">SAR 0.00</p>
+      </div>
+      <div class="card card-hover bg-white border border-gray-100 rounded-2xl p-5 transition">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+          <p class="text-gray-500 text-sm font-medium">Total Unpaid &amp; Overdue Bills</p>
+        </div>
+        <p id="unpaidCount" class="text-3xl font-bold text-gray-900">0</p>
+        <p id="unpaidAmount" class="text-gray-400 text-sm mt-1">SAR 0.00</p>
+      </div>
+    </div>
+
+    <!-- Entity overview: compares all 4 entities side by side — only
+         meaningful when "All Entities" is selected, so it's hidden once a
+         specific entity tab is active (everything below already scopes to
+         that entity, so re-showing a 4-way comparison would be confusing). -->
+    <section id="entityOverviewSection">
+      <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Entities Overview</h2>
+      <div id="entityCards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"></div>
+    </section>
+
+    <!-- Location overview: from the master spreadsheet's Location/Branch
+         mapping (data/master.db) joined onto the active scope's accounts.
+         "Unspecified" = the account is in the master sheet but spans no
+         single city; "Unmapped" = the account isn't in the master sheet at
+         all yet. See POST /api/master/import to (re)build the mapping. -->
+    <section>
+      <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Locations Overview</h2>
+      <div id="locationCards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"></div>
+    </section>
+
+    <!-- Payment status proportion + Top Locations ranking: quick visual
+         analytics that complement the tables below, scoped to the active
+         entity/carrier/account tab selection just like the cards above. -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="card bg-white border border-gray-100 rounded-2xl p-5 flex flex-col items-center justify-center">
+        <p class="text-gray-500 text-sm font-medium self-start mb-2">Payment Status</p>
+        <div id="statusDonut"></div>
+        <div class="flex gap-4 text-xs text-gray-500 mt-2">
+          <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full inline-block bg-emerald-500"></span>Paid</span>
+          <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full inline-block bg-amber-500"></span>Unpaid &amp; Overdue</span>
+        </div>
+      </div>
+      <div class="lg:col-span-2 card bg-white border border-gray-100 rounded-2xl p-5">
+        <p class="text-gray-500 text-sm font-medium mb-3">Top Locations by Amount</p>
+        <div id="topLocations" class="space-y-2.5"></div>
+      </div>
+    </div>
+
+    <!-- Store/Branch overview: same shape as Locations Overview, but grouped
+         by the master spreadsheet's Branch/User Department (store name)
+         instead of city. "Unmapped" = account isn't in the master sheet, or
+         the sheet left Branch/Store blank for it. -->
+    <section>
+      <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Stores Overview</h2>
+      <div id="branchCards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"></div>
+    </section>
+
+    <div class="card bg-white border border-gray-100 rounded-2xl p-5">
+      <p class="text-gray-500 text-sm font-medium mb-3">Top Stores by Amount</p>
+      <div id="topStores" class="space-y-2.5"></div>
+    </div>
+
+    <!-- Carrier breakdown + chart, scoped to the active entity -->
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+      <div id="carrierCards" class="lg:col-span-2 flex flex-col gap-3"></div>
+      <div class="lg:col-span-3 card bg-white border border-gray-100 rounded-2xl p-5">
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-gray-500 text-sm font-medium">Amount by Carrier &amp; Status</p>
+          <div class="flex gap-3 text-xs text-gray-500">
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm inline-block bg-emerald-500"></span>Paid</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm inline-block bg-amber-500"></span>Unpaid &amp; Overdue</span>
+          </div>
+        </div>
+        <div id="carrierChart" class="flex items-end justify-around gap-4 h-52 pt-8 border-b border-gray-100"></div>
+      </div>
+    </div>
+
+    <!-- Data table (filters live at the top of the view now, see above) -->
+    <div>
+      <div class="card bg-white border border-gray-100 rounded-2xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50/80 text-gray-500 text-left">
+              <tr>
+                <th class="px-4 py-3 font-medium">Entity</th>
+                <th class="px-4 py-3 font-medium">Carrier</th>
+                <th class="px-4 py-3 font-medium sortable-th select-none cursor-pointer hover:text-gray-700" data-sort="account_number">Account Number<span class="sort-arrow"></span></th>
+                <th class="px-4 py-3 font-medium">Location</th>
+                <th class="px-4 py-3 font-medium">Store</th>
+                <th class="px-4 py-3 font-medium sortable-th select-none cursor-pointer hover:text-gray-700" data-sort="status">Status<span class="sort-arrow"></span></th>
+                <th class="px-4 py-3 font-medium sortable-th select-none cursor-pointer hover:text-gray-700" data-sort="due_date">Due Date<span class="sort-arrow"></span></th>
+                <th class="px-4 py-3 font-medium sortable-th select-none cursor-pointer hover:text-gray-700" data-sort="amount">Amount<span class="sort-arrow"></span></th>
+                <th class="px-4 py-3 font-medium">Action</th>
+              </tr>
+            </thead>
+            <tbody id="accountsBody" class="divide-y divide-gray-50"></tbody>
+          </table>
+        </div>
+        <p id="emptyState" class="hidden text-center text-gray-400 py-10 text-sm">
+          No accounts match the current filters.
+        </p>
+
+        <!-- Pagination -->
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-gray-100 text-sm text-gray-500">
+          <span id="paginationInfo">Showing 0–0 of 0</span>
+          <div class="flex items-center gap-3">
+            <select id="pageSizeSelect"
+              class="bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs text-gray-700 focus:outline-none">
+              <option value="5">5 / page</option>
+              <option value="10" selected>10 / page</option>
+              <option value="25">25 / page</option>
+              <option value="50">50 / page</option>
+            </select>
+            <button id="prevPageBtn" class="px-3 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
+            <span id="pageIndicator">Page 1 of 1</span>
+            <button id="nextPageBtn" class="px-3 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+      </div><!-- /view-dashboard -->
+
+      <div id="view-archive" class="view hidden space-y-6">
+
+    <!-- Invoice Archive: every downloaded invoice on disk, independent of the
+         latest scrape — survives refreshes/restarts and covers every month
+         fetched via *_MONTHS_TO_FETCH, not just the current bill. Its own
+         Entity/Carrier/Month/Account/Status filters work identically no
+         matter which entity or carrier you pick. -->
+    <section>
+      <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Invoice Archive</h2>
+      <div class="card bg-white border border-gray-100 rounded-t-2xl border-b-0 p-4 flex flex-wrap gap-3 items-center">
+        <select id="archiveEntityFilter"
+          class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">All Entities</option>
+        </select>
+        <select id="archiveCarrierFilter"
+          class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">All Carriers</option>
+        </select>
+        <select id="archiveMonthFilter"
+          class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">All Months</option>
+        </select>
+        <select id="archiveAccountFilter"
+          class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">All Accounts</option>
+        </select>
+        <select id="archiveLocationFilter"
+          class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">All Locations</option>
+        </select>
+        <select id="archiveBranchFilter"
+          class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">All Stores</option>
+        </select>
+        <select id="archiveStatusFilter"
+          class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">All Statuses</option>
+          <option value="Paid">Paid</option>
+          <option value="Unpaid">Unpaid &amp; Overdue</option>
+        </select>
+        <button id="exportArchiveBtn"
+          class="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shadow-sm">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Export CSV
+        </button>
+        <button id="clearDataBtn"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-rose-200 text-rose-600 bg-white hover:bg-rose-50 shadow-sm">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6h16z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Clear Data
+        </button>
+        <span id="archiveCount" class="text-sm text-gray-400"></span>
+      </div>
+
+      <!-- Reports by Month: count of invoices per month, Paid vs Unpaid &
+           Overdue, respecting every filter above (Entity/Carrier/Location/
+           Store/Account/Status) — so switching Location or Store narrows
+           this down to that location/store's month-by-month picture. -->
+      <div class="card bg-white border-x border-gray-100 border-b-0 p-4">
+        <p class="text-gray-500 text-sm font-medium mb-3">Reports by Month <span class="font-normal text-gray-400">(invoice count, filtered)</span></p>
+        <div id="monthlyReport" class="space-y-2"></div>
+      </div>
+
+      <div class="card bg-white border border-gray-100 rounded-b-2xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50/80 text-gray-500 text-left">
+              <tr>
+                <th class="px-4 py-3 font-medium">Entity</th>
+                <th class="px-4 py-3 font-medium">Carrier</th>
+                <th class="px-4 py-3 font-medium">Account Number</th>
+                <th class="px-4 py-3 font-medium">Location</th>
+                <th class="px-4 py-3 font-medium">Store</th>
+                <th class="px-4 py-3 font-medium">Month</th>
+                <th class="px-4 py-3 font-medium">Status</th>
+                <th class="px-4 py-3 font-medium">File</th>
+                <th class="px-4 py-3 font-medium">Action</th>
+              </tr>
+            </thead>
+            <tbody id="archiveBody" class="divide-y divide-gray-50"></tbody>
+          </table>
+        </div>
+        <p id="archiveEmptyState" class="hidden text-center text-gray-400 py-10 text-sm">
+          No downloaded invoices yet. Click Refresh to fetch some.
+        </p>
+      </div>
+    </section>
+
+      </div><!-- /view-archive -->
+
+      <div id="view-master" class="view hidden space-y-6">
+
+    <!-- Master Data: the Location/CR/Branch/Department directory imported
+         from the TELECOMMUNICATION MASTER spreadsheet (data/master.db),
+         browsable and editable directly here. Re-running the spreadsheet
+         import (POST /api/master/import) replaces this whole table, so
+         manual edits made here will be overwritten by the next import. -->
+    <section>
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide">Master Data — Location &amp; Branch Directory</h2>
+        <button id="masterAddBtn"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold text-white shadow-sm hover:brightness-110"
+          style="background:linear-gradient(135deg,#4f46e5,#7c3aed)">
+          <span>+</span> Add Row
+        </button>
+      </div>
+      <div class="card bg-white border border-gray-100 rounded-t-2xl border-b-0 p-4 flex flex-wrap gap-3 items-center">
+        <input id="masterSearchInput" type="text" placeholder="Search account, branch, service number…"
+          class="flex-1 min-w-[200px] bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white" />
+        <select id="masterEntityFilter"
+          class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">All Entities</option>
+        </select>
+        <select id="masterCarrierFilter"
+          class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">All Carriers</option>
+        </select>
+        <button id="exportMasterBtn"
+          class="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shadow-sm">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Export CSV
+        </button>
+        <span id="masterCount" class="text-sm text-gray-400"></span>
+      </div>
+      <div class="card bg-white border border-gray-100 rounded-b-2xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50/80 text-gray-500 text-left">
+              <tr>
+                <th class="px-4 py-3 font-medium">Entity</th>
+                <th class="px-4 py-3 font-medium">Carrier</th>
+                <th class="px-4 py-3 font-medium">Location</th>
+                <th class="px-4 py-3 font-medium">CR</th>
+                <th class="px-4 py-3 font-medium">Branch / Store</th>
+                <th class="px-4 py-3 font-medium">Cost Center</th>
+                <th class="px-4 py-3 font-medium">Department</th>
+                <th class="px-4 py-3 font-medium">Account Number</th>
+                <th class="px-4 py-3 font-medium">Status</th>
+                <th class="px-4 py-3 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="masterBody" class="divide-y divide-gray-50"></tbody>
+          </table>
+        </div>
+        <p id="masterEmptyState" class="hidden text-center text-gray-400 py-10 text-sm">
+          No master data rows match the current filters.
+        </p>
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-gray-100 text-sm text-gray-500">
+          <span id="masterPaginationInfo">Showing 0–0 of 0</span>
+          <div class="flex items-center gap-3">
+            <button id="masterPrevPageBtn" class="px-3 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
+            <span id="masterPageIndicator">Page 1 of 1</span>
+            <button id="masterNextPageBtn" class="px-3 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+      </div><!-- /view-master -->
+
+      </main>
+    </div><!-- /main column -->
+  </div><!-- /flex shell -->
+
+  <!-- Master Data Add/Edit Modal -->
+  <div id="masterModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4 z-50">
+    <div class="bg-white border border-gray-100 shadow-2xl rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <h2 id="masterModalTitle" class="text-lg font-semibold mb-4 text-gray-900">Add Master Data Row</h2>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="text-xs text-gray-500 font-medium">Entity
+          <select id="masterFieldEntity" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"></select>
+        </label>
+        <label class="text-xs text-gray-500 font-medium">Carrier
+          <select id="masterFieldCarrier" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"></select>
+        </label>
+        <label class="text-xs text-gray-500 font-medium">Location
+          <input id="masterFieldLocation" type="text" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium">CR
+          <input id="masterFieldCr" type="text" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium col-span-2">Branch / Store name
+          <input id="masterFieldBranch" type="text" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium">Cost Center
+          <input id="masterFieldCostCenter" type="text" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium">Department
+          <input id="masterFieldDepartment" type="text" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium">Connection
+          <input id="masterFieldConnection" type="text" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium">Account Number
+          <input id="masterFieldAccountNumber" type="text" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium">Service Number
+          <input id="masterFieldServiceNumber" type="text" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium">Serial Number
+          <input id="masterFieldSerialNumber" type="text" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium">Status
+          <input id="masterFieldStatus" type="text" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium">Package
+          <input id="masterFieldPackage" type="text" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium col-span-2">Notes
+          <textarea id="masterFieldNotes" rows="2" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+        </label>
+      </div>
+      <div class="flex gap-3 mt-5">
+        <button id="masterModalCancel" class="flex-1 bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 rounded-xl py-2 text-sm font-medium">Cancel</button>
+        <button id="masterModalSave" class="flex-1 rounded-xl py-2 text-sm font-semibold text-white" style="background:linear-gradient(135deg,#4f46e5,#7c3aed)">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- OTP Modal -->
+  <div id="otpModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4 z-50">
+    <div class="bg-white border border-gray-100 shadow-2xl rounded-2xl p-6 w-full max-w-sm">
+      <h2 id="otpTitle" class="text-lg font-semibold mb-2 text-gray-900">Enter OTP</h2>
+      <p class="text-sm text-gray-500 mb-4">An OTP was sent to your registered phone number. Enter it below to continue.</p>
+      <input id="otpInput" type="text" inputmode="numeric" placeholder="6-digit code"
+        class="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 mb-4 text-center tracking-widest text-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white" />
+      <div class="flex gap-3">
+        <button id="otpCancel" class="flex-1 bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 rounded-xl py-2 text-sm font-medium">Cancel</button>
+        <button id="otpSubmit" class="flex-1 rounded-xl py-2 text-sm font-semibold text-white" style="background:linear-gradient(135deg,#4f46e5,#7c3aed)">Submit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live Browser Control: watch and directly drive the automation browser
+       running on the server, from any machine viewing this dashboard. See
+       backend/app/live_control.py for how the video/input streaming works. -->
+  <div id="liveControlModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 z-50">
+    <div class="bg-white border border-gray-100 shadow-2xl rounded-2xl p-4 w-full max-w-3xl">
+      <div class="flex items-center justify-between mb-2">
+        <div>
+          <h2 class="text-lg font-semibold text-gray-900">Live Browser Control</h2>
+          <p id="liveControlStatus" class="text-xs text-gray-500">Connecting…</p>
+        </div>
+        <button id="liveControlClose" class="text-gray-400 hover:text-gray-700 text-2xl leading-none">&times;</button>
+      </div>
+      <div class="rounded-xl overflow-hidden border border-gray-200 bg-gray-900 flex items-center justify-center" style="height:70vh">
+        <canvas id="liveControlCanvas" class="max-w-full max-h-full cursor-pointer"></canvas>
+      </div>
+      <p class="text-xs text-gray-400 mt-2">Click into the view to focus it, then type/click as if the browser were right in front of you.</p>
+    </div>
+  </div>
+
+  <script>
+    const API = '';
+
+    // Entity theme: color used for entity tabs/pills/cards.
+    const ENTITY_THEME = {
+      Ibraq:  { color: '#2563eb', soft: '#eff6ff' },
+      Match:  { color: '#db2777', soft: '#fdf2f8' },
+      Salfa:  { color: '#059669', soft: '#ecfdf5' },
+      Feelin: { color: '#d97706', soft: '#fffbeb' },
+    };
+
+    // Carrier theme: color used for carrier tabs/pills/chart bars.
+    const CARRIER_THEME = {
+      STC:    { color: '#6b21e8', soft: '#f3ebfe' },
+      Mobily: { color: '#00a651', soft: '#e6f7ee' },
+      Zain:   { color: '#7c3aed', soft: '#f1e9fe' },
+    };
+
+    let ENTITIES = ['Ibraq', 'Match', 'Salfa', 'Feelin'];
+    let CARRIERS = ['STC', 'Mobily', 'Zain'];
+    let ACCOUNTS = {}; // entity -> carrier -> [{slot, label}]
+
+    let activeEntity = '';   // '' = All entities
+    let activeCarrier = '';  // '' = All carriers under activeEntity
+    let activeAccountSlot = ''; // '' = All accounts under activeEntity+activeCarrier
+
+    let currentJobId = null;
+    let pollTimer = null;
+    let refreshQueue = [];
+
+    // Table state: raw accounts for the active scope, plus search/filter/pagination
+    let tableAccounts = [];
+    let searchTerm = '';
+    let statusFilterValue = '';
+    let monthFilterValue = '';
+    let accountFilterValue = '';
+    let locationFilterValue = '';
+    let branchFilterValue = '';
+    let currentPage = 1;
+    let pageSize = 10;
+    let sortColumn = null;   // 'account_number' | 'status' | 'due_date' | 'amount'
+    let sortDirection = 'asc';
+
+    // Invoice archive state: every file on disk (from /api/invoices,
+    // independent of the latest scrape and of the tabs above — it has its
+    // own Entity/Carrier filters so every combination behaves identically).
+    let archiveInvoices = [];
+    let archiveEntityFilter = '';
+    let archiveCarrierFilter = '';
+    let archiveMonthFilter = '';
+    let archiveAccountFilter = '';
+    let archiveLocationFilter = '';
+    let archiveBranchFilter = '';
+    let archiveStatusFilterValue = '';
+
+    // Master Data (Location/Branch directory, CRUD-backed) state
+    let masterRows = [];
+    let masterTotal = 0;
+    let masterEntityFilter = '';
+    let masterCarrierFilter = '';
+    let masterSearchTerm = '';
+    let masterPage = 1;
+    const MASTER_PAGE_SIZE = 25;
+    let masterEditingId = null; // null = Add mode, else editing this row's id
+
+    const el = (id) => document.getElementById(id);
+
+    function money(n) {
+      return 'SAR ' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function moneyShort(n) {
+      const num = Number(n || 0);
+      if (num >= 1000) return 'SAR ' + (num / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 }) + 'K';
+      return 'SAR ' + num.toFixed(0);
+    }
+
+    const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'];
+
+    // Mirrors file_organizer.invoice_month_folder()'s format-guessing order
+    // (Y-M-D, then D/M/Y, then M/D/Y, then D-M-Y) so an account's due_date
+    // buckets into the same "Month_Year" label used by the invoice archive.
+    function accountMonthLabel(dueDate) {
+      if (!dueDate) return 'Unknown';
+      let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(dueDate);
+      if (m) return `${MONTH_NAMES[Number(m[2]) - 1]}_${m[1]}`;
+
+      // "DD/MM/YYYY" is tried before "MM/DD/YYYY", same order as the backend.
+      m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(dueDate);
+      if (m) {
+        const first = Number(m[1]), second = Number(m[2]);
+        if (second <= 12 && first <= 31) return `${MONTH_NAMES[second - 1]}_${m[3]}`;
+        if (first <= 12) return `${MONTH_NAMES[first - 1]}_${m[3]}`;
+      }
+
+      m = /^(\d{1,2})-(\d{1,2})-(\d{4})$/.exec(dueDate);
+      if (m) {
+        const first = Number(m[1]), second = Number(m[2]);
+        if (second <= 12 && first <= 31) return `${MONTH_NAMES[second - 1]}_${m[3]}`;
+        if (first <= 12) return `${MONTH_NAMES[first - 1]}_${m[3]}`;
+      }
+      return 'Unknown';
+    }
+
+    // Display label only — the underlying status value stays "Unpaid" everywhere
+    // (folders, filters, data-status attributes) so nothing else has to change.
+    function statusLabel(status) {
+      return status === 'Unpaid' ? 'Unpaid & Overdue' : status;
+    }
+
+    function statusBadge(status) {
+      const map = {
+        Paid: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        Unpaid: 'bg-amber-50 text-amber-700 border-amber-200',
+      };
+      const cls = map[status] || map.Unpaid;
+      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${cls}">
+        <span class="w-1.5 h-1.5 rounded-full" style="background:currentColor"></span>${statusLabel(status)}
+      </span>`;
+    }
+
+    function pill(label, theme) {
+      return `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold"
+        style="background:${theme.soft};color:${theme.color}">
+        <span class="w-1.5 h-1.5 rounded-full" style="background:${theme.color}"></span>${label}
+      </span>`;
+    }
+
+    function entityPill(entity) {
+      return pill(entity, ENTITY_THEME[entity] || { color: '#6b7280', soft: '#f3f4f6' });
+    }
+
+    function carrierPill(carrier) {
+      return pill(carrier, CARRIER_THEME[carrier] || { color: '#6b7280', soft: '#f3f4f6' });
+    }
+
+    function showBanner(text, kind, action) {
+      const banner = el('statusBanner');
+      const kinds = {
+        info: 'bg-indigo-50 border-indigo-100 text-indigo-700',
+        error: 'bg-rose-50 border-rose-100 text-rose-700',
+        success: 'bg-emerald-50 border-emerald-100 text-emerald-700',
+      };
+      banner.className = `rounded-xl px-4 py-3 text-sm border flex items-center justify-between gap-3 ${kinds[kind] || kinds.info}`;
+      banner.innerHTML = '';
+      const span = document.createElement('span');
+      span.textContent = text;
+      banner.appendChild(span);
+      if (action) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = action.label;
+        btn.className = 'underline font-medium shrink-0 hover:opacity-75';
+        btn.addEventListener('click', action.onClick);
+        banner.appendChild(btn);
+      }
+      banner.classList.remove('hidden');
+    }
+
+    function hideBanner() {
+      el('statusBanner').classList.add('hidden');
+    }
+
+    // ---- Tier 1: Entity tabs ----
+    function renderEntityTabs() {
+      const container = el('entityTabs');
+      const tabs = ['', ...ENTITIES];
+      container.innerHTML = tabs.map((entity) => {
+        const isActive = entity === activeEntity;
+        const theme = ENTITY_THEME[entity];
+        const label = entity || 'All Entities';
+        const activeStyle = isActive
+          ? `background:${theme ? theme.color : '#4f46e5'};color:#fff;border-color:transparent`
+          : 'background:#fff;color:#4b5563;border-color:#e5e7eb';
+        return `<button data-entity="${entity}"
+          class="tab-btn entity-tab px-4 py-2 rounded-full text-sm font-semibold border shadow-sm"
+          style="${activeStyle}">${label}</button>`;
+      }).join('');
+
+      container.querySelectorAll('.entity-tab').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          activeEntity = btn.dataset.entity;
+          activeCarrier = '';
+          activeAccountSlot = '';
+          renderEntityTabs();
+          renderCarrierTabs();
+          renderAccountTabs();
+          updateRefreshLabel();
+          loadAccounts();
+        });
+      });
+    }
+
+    // ---- Tier 2: Carrier tabs (within the active entity) ----
+    function renderCarrierTabs() {
+      const container = el('carrierTabs');
+      if (!activeEntity) {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+        return;
+      }
+
+      const tabs = ['', ...CARRIERS];
+      container.classList.remove('hidden');
+      container.classList.add('flex');
+      container.innerHTML = tabs.map((carrier) => {
+        const isActive = carrier === activeCarrier;
+        const theme = CARRIER_THEME[carrier];
+        const label = carrier || `All ${activeEntity} Carriers`;
+        const style = isActive
+          ? `background:${theme ? theme.soft : '#eef2ff'};color:${theme ? theme.color : '#4f46e5'};border-color:${theme ? theme.color : '#4f46e5'}`
+          : 'background:#fff;color:#6b7280;border-color:#e5e7eb';
+        return `<button data-carrier="${carrier}"
+          class="tab-btn carrier-tab px-3.5 py-1.5 rounded-full text-sm font-medium border"
+          style="${style}">${label}</button>`;
+      }).join('');
+
+      container.querySelectorAll('.carrier-tab').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          activeCarrier = btn.dataset.carrier;
+          activeAccountSlot = '';
+          renderCarrierTabs();
+          renderAccountTabs();
+          updateRefreshLabel();
+          loadAccounts();
+        });
+      });
+    }
+
+    // ---- Tier 3: Account sub-tabs (within the active entity+carrier, only
+    // shown when more than one login is configured for that pair) ----
+    function renderAccountTabs() {
+      const container = el('accountTabs');
+      const slots = (activeEntity && activeCarrier && ACCOUNTS[activeEntity] && ACCOUNTS[activeEntity][activeCarrier]) || [];
+      if (!activeEntity || !activeCarrier || slots.length <= 1) {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+        return;
+      }
+
+      const theme = CARRIER_THEME[activeCarrier] || { color: '#4f46e5', soft: '#eef2ff' };
+      const tabs = [{ slot: '', label: `All ${activeCarrier} Accounts` }, ...slots.map((s) => ({ slot: s.slot, label: s.label }))];
+
+      container.classList.remove('hidden');
+      container.classList.add('flex');
+      container.innerHTML = tabs.map((tab) => {
+        const isActive = tab.slot === activeAccountSlot;
+        const style = isActive
+          ? `background:${theme.soft};color:${theme.color};border-color:${theme.color}`
+          : 'background:#fff;color:#6b7280;border-color:#e5e7eb';
+        return `<button data-slot="${tab.slot}"
+          class="tab-btn account-tab px-3 py-1 rounded-full text-xs font-medium border"
+          style="${style}">${tab.label}</button>`;
+      }).join('');
+
+      container.querySelectorAll('.account-tab').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          activeAccountSlot = btn.dataset.slot === '' ? '' : Number(btn.dataset.slot);
+          currentPage = 1;
+          renderAccountTabs();
+          updateRefreshLabel();
+          renderTable();
+        });
+      });
+    }
+
+    function accountSlotLabel(entity, carrier, slot) {
+      const found = ((ACCOUNTS[entity] && ACCOUNTS[entity][carrier]) || []).find((s) => s.slot === slot);
+      return found ? found.label : `Account ${slot}`;
+    }
+
+    function updateRefreshLabel() {
+      let label;
+      if (!activeEntity) {
+        label = 'Refresh All Entities';
+      } else if (!activeCarrier) {
+        label = `Refresh All ${activeEntity} Carriers`;
+      } else if (activeAccountSlot === '') {
+        label = `Refresh ${activeEntity} · All ${activeCarrier} Accounts`;
+      } else {
+        label = `Refresh ${activeEntity} · ${activeCarrier} – ${accountSlotLabel(activeEntity, activeCarrier, activeAccountSlot)}`;
+      }
+      el('refreshLabel').textContent = label;
+    }
+
+    // ---- Entities overview: a 4-way comparison, only shown when "All
+    // Entities" is active (drilling into one entity hides it, since
+    // everything else on the page already scopes to that entity). ----
+    function renderEntityCards(byEntity) {
+      el('entityOverviewSection').classList.toggle('hidden', !!activeEntity);
+      if (activeEntity) return;
+
+      const container = el('entityCards');
+      container.innerHTML = byEntity.map((e) => {
+        const theme = ENTITY_THEME[e.entity] || { color: '#6b7280', soft: '#f3f4f6' };
+        return `
+        <div class="card card-hover bg-white border border-gray-100 rounded-2xl p-4 transition">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white" style="background:${theme.color}">${e.entity[0]}</span>
+            <span class="font-semibold text-sm text-gray-800">${e.entity}</span>
+          </div>
+          <p class="text-xl font-bold text-gray-900">${money(e.total_amount)}</p>
+          <p class="text-xs text-gray-400 mb-3">${e.total_count} account(s)</p>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div><p class="text-emerald-600 font-semibold">${e.paid_count}</p><p class="text-gray-400">Paid</p></div>
+            <div><p class="text-amber-600 font-semibold">${e.unpaid_count}</p><p class="text-gray-400">Unpaid &amp; Overdue</p></div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    const NEUTRAL_LOCATION_COLOR = '#94a3b8'; // used for "Unspecified"/"Unmapped"/"Multiple Locations"
+
+    function locationColor(location) {
+      if (location === 'Unspecified' || location === 'Unmapped' || location === 'Multiple Locations') return NEUTRAL_LOCATION_COLOR;
+      // Deterministic color per real city name, from a small fixed palette.
+      const palette = ['#0ea5e9', '#f97316', '#8b5cf6', '#14b8a6', '#e11d48', '#65a30d', '#ca8a04', '#6366f1'];
+      let hash = 0;
+      for (let i = 0; i < location.length; i++) hash = (hash * 31 + location.charCodeAt(i)) >>> 0;
+      return palette[hash % palette.length];
+    }
+
+    function renderLocationCards(byLocation) {
+      const container = el('locationCards');
+      if (!byLocation.length) {
+        container.innerHTML = `<p class="text-sm text-gray-400 col-span-full">No accounts in scope yet.</p>`;
+        return;
+      }
+      container.innerHTML = byLocation.map((l) => {
+        const color = locationColor(l.location);
+        return `
+        <div class="card bg-white border border-gray-100 rounded-2xl p-4 border-l-4" style="border-left-color:${color}">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-semibold text-sm" style="color:${color}">${l.location}</span>
+            <span class="text-xs text-gray-400">${l.total_count} · ${money(l.total_amount)}</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div><p class="text-emerald-600 font-semibold">${l.paid_count}</p><p class="text-gray-400">Paid</p></div>
+            <div><p class="text-amber-600 font-semibold">${l.unpaid_count}</p><p class="text-gray-400">Unpaid &amp; Overdue</p></div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function locationPill(location) {
+      const color = locationColor(location || 'Unmapped');
+      return `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium"
+        style="background:${color}1a;color:${color}">${location || 'Unmapped'}</span>`;
+    }
+
+    // Same shape as renderLocationCards, grouped by store/branch instead —
+    // reuses locationColor since "Unmapped" is already treated as neutral there.
+    function renderBranchCards(byBranch) {
+      const container = el('branchCards');
+      if (!byBranch.length) {
+        container.innerHTML = `<p class="text-sm text-gray-400 col-span-full">No accounts in scope yet.</p>`;
+        return;
+      }
+      container.innerHTML = byBranch.map((b) => {
+        const color = locationColor(b.branch);
+        return `
+        <div class="card bg-white border border-gray-100 rounded-2xl p-4 border-l-4" style="border-left-color:${color}">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-semibold text-sm" style="color:${color}">${b.branch}</span>
+            <span class="text-xs text-gray-400">${b.total_count} · ${money(b.total_amount)}</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div><p class="text-emerald-600 font-semibold">${b.paid_count}</p><p class="text-gray-400">Paid</p></div>
+            <div><p class="text-amber-600 font-semibold">${b.unpaid_count}</p><p class="text-gray-400">Unpaid &amp; Overdue</p></div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function renderCarrierCards(byProvider) {
+      const container = el('carrierCards');
+      container.innerHTML = byProvider.map((p) => {
+        const theme = CARRIER_THEME[p.provider] || { color: '#6b7280' };
+        return `
+        <div class="card bg-white border border-gray-100 rounded-2xl p-4 border-l-4" style="border-left-color:${theme.color}">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-semibold text-sm" style="color:${theme.color}">${p.provider}</span>
+            <span class="text-xs text-gray-400">${p.total_count} account(s) · ${money(p.total_amount)}</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div><p class="text-emerald-600 font-semibold">${p.paid_count}</p><p class="text-gray-400">Paid</p></div>
+            <div><p class="text-amber-600 font-semibold">${p.unpaid_count}</p><p class="text-gray-400">Unpaid &amp; Overdue</p></div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // Grouped vertical bar chart (2 bars per carrier: Paid / Unpaid), pure CSS/DOM.
+    function renderChart(byProvider) {
+      const container = el('carrierChart');
+      const BAR_AREA_PX = 150;
+      const statuses = [
+        { key: 'paid_amount', countKey: 'paid_count', color: '#10b981', label: 'Paid' },
+        { key: 'unpaid_amount', countKey: 'unpaid_count', color: '#f59e0b', label: 'Unpaid & Overdue' },
+      ];
+      const maxValue = Math.max(1, ...byProvider.flatMap((p) => statuses.map((s) => p[s.key])));
+
+      container.innerHTML = byProvider.map((p) => {
+        const theme = CARRIER_THEME[p.provider] || { color: '#6b7280' };
+        const bars = statuses.map((s) => {
+          const amount = p[s.key];
+          const count = p[s.countKey];
+          const heightPx = amount > 0 ? Math.max(6, Math.round((amount / maxValue) * BAR_AREA_PX)) : 2;
+          return `
+            <div class="flex flex-col items-center justify-end" style="height:${BAR_AREA_PX + 20}px">
+              <span class="text-[10px] font-medium text-gray-600 mb-1">${amount > 0 ? moneyShort(amount) : ''}</span>
+              <div title="${s.label} ${money(amount)} (${count} account(s))"
+                style="height:${heightPx}px;width:28px;background:${s.color};border-radius:6px 6px 0 0"></div>
+            </div>`;
+        }).join('');
+
+        return `
+        <div class="flex flex-col items-center gap-2">
+          <div class="flex items-end gap-3">${bars}</div>
+          <span class="text-xs font-semibold" style="color:${theme.color}">${p.provider}</span>
+        </div>`;
+      }).join('');
+    }
+
+    function renderAnalyticsCards(analytics) {
+      el('paidCount').textContent = analytics.paid_count;
+      el('paidAmount').textContent = money(analytics.paid_amount);
+      el('unpaidCount').textContent = analytics.unpaid_count;
+      el('unpaidAmount').textContent = money(analytics.unpaid_amount);
+    }
+
+    // Pure-SVG donut (no chart library): Paid vs Unpaid proportion of the
+    // current entity/carrier/account selection's total amount.
+    function renderStatusDonut(analytics) {
+      const total = analytics.paid_amount + analytics.unpaid_amount;
+      const paidPct = total > 0 ? (analytics.paid_amount / total) * 100 : 0;
+      const r = 40;
+      const circumference = 2 * Math.PI * r;
+      const paidLength = (paidPct / 100) * circumference;
+      el('statusDonut').innerHTML = `
+        <svg viewBox="0 0 100 100" width="140" height="140">
+          <circle cx="50" cy="50" r="${r}" fill="none" stroke="#fef3c7" stroke-width="14"/>
+          <circle cx="50" cy="50" r="${r}" fill="none" stroke="#f59e0b" stroke-width="14"
+            stroke-dasharray="${circumference}" stroke-dashoffset="0" opacity="0.9"/>
+          <circle cx="50" cy="50" r="${r}" fill="none" stroke="#10b981" stroke-width="14"
+            stroke-dasharray="${paidLength} ${circumference - paidLength}"
+            stroke-linecap="round" transform="rotate(-90 50 50)">
+            <title>Paid ${money(analytics.paid_amount)} (${paidPct.toFixed(1)}%)</title>
+          </circle>
+          <text x="50" y="46" text-anchor="middle" font-size="18" font-weight="700" fill="#111827">${paidPct.toFixed(0)}%</text>
+          <text x="50" y="61" text-anchor="middle" font-size="7" fill="#9ca3af">Paid</text>
+        </svg>`;
+    }
+
+    // Ranked horizontal bar list of the top locations by total amount
+    // (by_location is already sorted desc by the backend).
+    function renderTopLocations(byLocation) {
+      const container = el('topLocations');
+      const top = byLocation.filter((l) => l.total_amount > 0).slice(0, 6);
+      if (!top.length) {
+        container.innerHTML = `<p class="text-sm text-gray-400">No location data in scope yet.</p>`;
+        return;
+      }
+      const maxAmount = Math.max(...top.map((l) => l.total_amount));
+      container.innerHTML = top.map((l) => {
+        const color = locationColor(l.location);
+        const widthPct = Math.max(4, (l.total_amount / maxAmount) * 100);
+        return `
+        <div>
+          <div class="flex items-center justify-between text-xs mb-1">
+            <span class="font-medium" style="color:${color}">${l.location}</span>
+            <span class="text-gray-500">${money(l.total_amount)} · ${l.total_count} acct(s)</span>
+          </div>
+          <div class="h-2.5 w-full bg-gray-100 rounded-full overflow-hidden">
+            <div style="width:${widthPct}%;background:${color}" class="h-full rounded-full"></div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // Same ranked bar list, for stores/branches instead of cities
+    // (by_branch is already sorted desc by the backend).
+    function renderTopStores(byBranch) {
+      const container = el('topStores');
+      const top = byBranch.filter((b) => b.total_amount > 0).slice(0, 6);
+      if (!top.length) {
+        container.innerHTML = `<p class="text-sm text-gray-400">No store data in scope yet.</p>`;
+        return;
+      }
+      const maxAmount = Math.max(...top.map((b) => b.total_amount));
+      container.innerHTML = top.map((b) => {
+        const color = locationColor(b.branch);
+        const widthPct = Math.max(4, (b.total_amount / maxAmount) * 100);
+        return `
+        <div>
+          <div class="flex items-center justify-between text-xs mb-1">
+            <span class="font-medium" style="color:${color}">${b.branch}</span>
+            <span class="text-gray-500">${money(b.total_amount)} · ${b.total_count} acct(s)</span>
+          </div>
+          <div class="h-2.5 w-full bg-gray-100 rounded-full overflow-hidden">
+            <div style="width:${widthPct}%;background:${color}" class="h-full rounded-full"></div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // ---- Generic CSV export (client-side, respects whatever filters are
+    // currently active — never a raw unfiltered dump) ----
+    function exportToCsv(filename, rows, columns) {
+      const escapeCell = (v) => {
+        if (v === null || v === undefined) return '';
+        const s = String(v);
+        return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      };
+      const header = columns.map((c) => escapeCell(c.label)).join(',');
+      const lines = rows.map((row) => columns.map((c) => escapeCell(row[c.key])).join(','));
+      const csv = [header, ...lines].join('\r\n');
+      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function getFilteredAccounts() {
+      const filtered = tableAccounts.filter((acc) => {
+        if (activeAccountSlot !== '' && acc.account_slot !== activeAccountSlot) return false;
+        if (statusFilterValue && acc.status !== statusFilterValue) return false;
+        if (monthFilterValue && accountMonthLabel(acc.due_date) !== monthFilterValue) return false;
+        if (accountFilterValue && acc.account_number !== accountFilterValue) return false;
+        if (locationFilterValue && acc.location !== locationFilterValue) return false;
+        if (branchFilterValue && (acc.branch || 'Unmapped') !== branchFilterValue) return false;
+        if (searchTerm && !acc.account_number.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+        return true;
+      });
+      if (sortColumn) {
+        const dir = sortDirection === 'asc' ? 1 : -1;
+        filtered.sort((a, b) => {
+          let av = a[sortColumn];
+          let bv = b[sortColumn];
+          if (sortColumn === 'amount') { av = Number(av) || 0; bv = Number(bv) || 0; }
+          else { av = String(av ?? '').toLowerCase(); bv = String(bv ?? '').toLowerCase(); }
+          if (av < bv) return -1 * dir;
+          if (av > bv) return 1 * dir;
+          return 0;
+        });
+      }
+      return filtered;
+    }
+
+    function setSortColumn(column) {
+      if (sortColumn === column) {
+        sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortColumn = column;
+        sortDirection = 'asc';
+      }
+      currentPage = 1;
+      renderTable();
+    }
+
+    document.querySelectorAll('.sortable-th').forEach((th) => {
+      th.addEventListener('click', () => setSortColumn(th.dataset.sort));
+    });
+
+    // Client-side mirrors of the backend's analytics/breakdown functions
+    // (see main.py's _compute_analytics / _compute_carrier_breakdown /
+    // _compute_location_breakdown / _compute_branch_breakdown), so every
+    // visualization on the Dashboard reacts to Status/Month/Account/
+    // Location/Store/search filters, not just the accounts table.
+    function computeAnalytics(accounts) {
+      const a = { paid_count: 0, paid_amount: 0, unpaid_count: 0, unpaid_amount: 0 };
+      for (const acc of accounts) {
+        if (acc.status === 'Paid') { a.paid_count += 1; a.paid_amount += acc.amount; }
+        else { a.unpaid_count += 1; a.unpaid_amount += acc.amount; }
+      }
+      return a;
+    }
+
+    function computeCarrierBreakdown(accounts) {
+      return CARRIERS.map((carrier) => {
+        const subset = accounts.filter((a) => a.provider === carrier);
+        return {
+          provider: carrier, ...computeAnalytics(subset),
+          total_count: subset.length, total_amount: subset.reduce((s, a) => s + a.amount, 0),
+        };
+      });
+    }
+
+    function computeGroupBreakdown(accounts, keyFn, keyName) {
+      const buckets = {};
+      for (const acc of accounts) {
+        const key = keyFn(acc);
+        (buckets[key] = buckets[key] || []).push(acc);
+      }
+      const breakdown = Object.entries(buckets).map(([key, subset]) => ({
+        [keyName]: key, ...computeAnalytics(subset),
+        total_count: subset.length, total_amount: subset.reduce((s, a) => s + a.amount, 0),
+      }));
+      breakdown.sort((a, b) => b.total_amount - a.total_amount);
+      return breakdown;
+    }
+
+    function updateVisualizations(filtered) {
+      const analytics = computeAnalytics(filtered);
+      const byLocation = computeGroupBreakdown(filtered, (a) => a.location || 'Unmapped', 'location');
+      const byBranch = computeGroupBreakdown(filtered, (a) => a.branch || 'Unmapped', 'branch');
+      const byProvider = computeCarrierBreakdown(filtered);
+      renderAnalyticsCards(analytics);
+      renderStatusDonut(analytics);
+      renderLocationCards(byLocation);
+      renderTopLocations(byLocation);
+      renderBranchCards(byBranch);
+      renderTopStores(byBranch);
+      renderCarrierCards(byProvider);
+      renderChart(byProvider);
+    }
+
+    function renderTable() {
+      const filtered = getFilteredAccounts();
+      updateVisualizations(filtered);
+      const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+      currentPage = Math.min(currentPage, totalPages);
+      const start = (currentPage - 1) * pageSize;
+      const pageItems = filtered.slice(start, start + pageSize);
+
+      document.querySelectorAll('.sortable-th').forEach((th) => {
+        const isActive = th.dataset.sort === sortColumn;
+        th.classList.toggle('sort-active', isActive);
+        const arrow = th.querySelector('.sort-arrow');
+        arrow.textContent = isActive ? (sortDirection === 'asc' ? '▲' : '▼') : '↕';
+      });
+
+      const body = el('accountsBody');
+      body.innerHTML = '';
+      el('emptyState').classList.toggle('hidden', pageItems.length > 0);
+
+      for (const acc of pageItems) {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50/70 transition';
+        tr.innerHTML = `
+          <td class="px-4 py-3">${entityPill(acc.entity)}</td>
+          <td class="px-4 py-3">${carrierPill(acc.provider)}</td>
+          <td class="px-4 py-3 font-medium text-gray-900">${acc.account_number}<span class="block text-xs text-gray-400 font-normal">${accountSlotLabel(acc.entity, acc.provider, acc.account_slot)}</span></td>
+          <td class="px-4 py-3">${locationPill(acc.location)}</td>
+          <td class="px-4 py-3 text-gray-700">${acc.branch || '<span class="text-gray-300">—</span>'}</td>
+          <td class="px-4 py-3">${statusBadge(acc.status)}${acc.status_detail ? `<span class="block text-xs text-gray-400 mt-0.5">${acc.status_detail}</span>` : ''}</td>
+          <td class="px-4 py-3 text-gray-600">${acc.due_date}</td>
+          <td class="px-4 py-3 text-gray-600">${money(acc.amount)}</td>
+          <td class="px-4 py-3">
+            <button data-account="${acc.account_number}" class="download-invoice-btn text-indigo-600 hover:text-indigo-500 text-sm font-medium">
+              Download Invoice
+            </button>
+          </td>`;
+        body.appendChild(tr);
+      }
+
+      document.querySelectorAll('.download-invoice-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          window.location.href = `${API}/api/invoice/${encodeURIComponent(btn.dataset.account)}`;
+        });
+      });
+
+      const rangeStart = filtered.length === 0 ? 0 : start + 1;
+      const rangeEnd = Math.min(start + pageItems.length, filtered.length);
+      el('paginationInfo').textContent = `Showing ${rangeStart}–${rangeEnd} of ${filtered.length}`;
+      el('pageIndicator').textContent = `Page ${currentPage} of ${totalPages}`;
+      el('prevPageBtn').disabled = currentPage <= 1;
+      el('nextPageBtn').disabled = currentPage >= totalPages;
+    }
+
+    function setTableAccounts(accounts) {
+      tableAccounts = accounts;
+      currentPage = 1;
+      populateAccountsFilterOptions();
+      renderTable();
+    }
+
+    // Repopulates the Month/Account/Location/Store dropdowns from whatever
+    // is in scope right now (active entity/carrier/account-slot tab), same
+    // dependent-filter pattern as the Invoice Archive's dropdowns.
+    function populateAccountsFilterOptions() {
+      const months = [...new Set(tableAccounts.map((a) => accountMonthLabel(a.due_date)))].sort().reverse();
+      const monthSelect = el('monthFilter');
+      const prevMonth = monthSelect.value;
+      monthSelect.innerHTML = '<option value="">All Months</option>' +
+        months.map((m) => `<option value="${m}">${m.replace('_', ' ')}</option>`).join('');
+      monthSelect.value = months.includes(prevMonth) ? prevMonth : '';
+      monthFilterValue = monthSelect.value;
+
+      const accountNumbers = [...new Set(tableAccounts.map((a) => a.account_number))].sort();
+      const accountSelect = el('accountFilter');
+      const prevAccount = accountSelect.value;
+      accountSelect.innerHTML = '<option value="">All Accounts</option>' +
+        accountNumbers.map((a) => `<option value="${a}">${a}</option>`).join('');
+      accountSelect.value = accountNumbers.includes(prevAccount) ? prevAccount : '';
+      accountFilterValue = accountSelect.value;
+
+      const locations = [...new Set(tableAccounts.map((a) => a.location).filter(Boolean))].sort();
+      const locationSelect = el('locationFilter');
+      const prevLocation = locationSelect.value;
+      locationSelect.innerHTML = '<option value="">All Locations</option>' +
+        locations.map((l) => `<option value="${l}">${l}</option>`).join('');
+      locationSelect.value = locations.includes(prevLocation) ? prevLocation : '';
+      locationFilterValue = locationSelect.value;
+
+      const branches = [...new Set(tableAccounts.map((a) => a.branch || 'Unmapped'))].sort();
+      const branchSelect = el('branchFilter');
+      const prevBranch = branchSelect.value;
+      branchSelect.innerHTML = '<option value="">All Stores</option>' +
+        branches.map((b) => `<option value="${b}">${b}</option>`).join('');
+      branchSelect.value = branches.includes(prevBranch) ? prevBranch : '';
+      branchFilterValue = branchSelect.value;
+    }
+
+    // Brand-scoped subset used to populate the dependent Month/Account
+    // dropdowns — every entity/carrier combination gets identical filtering.
+    function getArchiveScopedByEntityCarrier() {
+      return archiveInvoices.filter((i) =>
+        (!archiveEntityFilter || i.entity === archiveEntityFilter) &&
+        (!archiveCarrierFilter || i.provider === archiveCarrierFilter)
+      );
+    }
+
+    function populateArchiveEntityCarrierFilters() {
+      const entitySelect = el('archiveEntityFilter');
+      const prevEntity = entitySelect.value;
+      entitySelect.innerHTML = '<option value="">All Entities</option>' +
+        ENTITIES.map((e) => `<option value="${e}">${e}</option>`).join('');
+      entitySelect.value = ENTITIES.includes(prevEntity) ? prevEntity : '';
+      archiveEntityFilter = entitySelect.value;
+
+      const carrierSelect = el('archiveCarrierFilter');
+      const prevCarrier = carrierSelect.value;
+      carrierSelect.innerHTML = '<option value="">All Carriers</option>' +
+        CARRIERS.map((c) => `<option value="${c}">${c}</option>`).join('');
+      carrierSelect.value = CARRIERS.includes(prevCarrier) ? prevCarrier : '';
+      archiveCarrierFilter = carrierSelect.value;
+    }
+
+    function populateArchiveMonthAccountFilters() {
+      const scoped = getArchiveScopedByEntityCarrier();
+
+      const months = [...new Set(scoped.map((i) => i.month))].sort().reverse();
+      const monthSelect = el('archiveMonthFilter');
+      const prevMonth = monthSelect.value;
+      monthSelect.innerHTML = '<option value="">All Months</option>' +
+        months.map((m) => `<option value="${m}">${m.replace('_', ' ')}</option>`).join('');
+      monthSelect.value = months.includes(prevMonth) ? prevMonth : '';
+      archiveMonthFilter = monthSelect.value;
+
+      const accounts = [...new Set(scoped.map((i) => i.account_number))].sort();
+      const accountSelect = el('archiveAccountFilter');
+      const prevAccount = accountSelect.value;
+      accountSelect.innerHTML = '<option value="">All Accounts</option>' +
+        accounts.map((a) => `<option value="${a}">${a}</option>`).join('');
+      accountSelect.value = accounts.includes(prevAccount) ? prevAccount : '';
+      archiveAccountFilter = accountSelect.value;
+
+      const locations = [...new Set(scoped.map((i) => i.location).filter(Boolean))].sort();
+      const locationSelect = el('archiveLocationFilter');
+      const prevLocation = locationSelect.value;
+      locationSelect.innerHTML = '<option value="">All Locations</option>' +
+        locations.map((l) => `<option value="${l}">${l}</option>`).join('');
+      locationSelect.value = locations.includes(prevLocation) ? prevLocation : '';
+      archiveLocationFilter = locationSelect.value;
+
+      const branches = [...new Set(scoped.map((i) => i.branch || 'Unmapped'))].sort();
+      const branchSelect = el('archiveBranchFilter');
+      const prevBranch = branchSelect.value;
+      branchSelect.innerHTML = '<option value="">All Stores</option>' +
+        branches.map((b) => `<option value="${b}">${b}</option>`).join('');
+      branchSelect.value = branches.includes(prevBranch) ? prevBranch : '';
+      archiveBranchFilter = branchSelect.value;
+    }
+
+    function getFilteredArchiveInvoices() {
+      const filtered = archiveInvoices.filter((inv) => {
+        if (archiveEntityFilter && inv.entity !== archiveEntityFilter) return false;
+        if (archiveCarrierFilter && inv.provider !== archiveCarrierFilter) return false;
+        if (archiveMonthFilter && inv.month !== archiveMonthFilter) return false;
+        if (archiveAccountFilter && inv.account_number !== archiveAccountFilter) return false;
+        if (archiveLocationFilter && inv.location !== archiveLocationFilter) return false;
+        if (archiveBranchFilter && (inv.branch || 'Unmapped') !== archiveBranchFilter) return false;
+        if (archiveStatusFilterValue && inv.status !== archiveStatusFilterValue) return false;
+        return true;
+      });
+      filtered.sort((a, b) => b.modified_at - a.modified_at);
+      return filtered;
+    }
+
+    // Groups the currently filtered archive invoices by month and counts
+    // Paid vs Unpaid & Overdue — a quick month-over-month read on whatever
+    // Location/Store/Entity/Carrier/Account slice is currently selected.
+    function renderMonthlyReport(filtered) {
+      const container = el('monthlyReport');
+      if (!filtered.length) {
+        container.innerHTML = `<p class="text-sm text-gray-400">No invoices match the current filters.</p>`;
+        return;
+      }
+      const byMonth = {};
+      for (const inv of filtered) {
+        if (!byMonth[inv.month]) byMonth[inv.month] = { paid: 0, unpaid: 0 };
+        if (inv.status === 'Paid') byMonth[inv.month].paid += 1;
+        else byMonth[inv.month].unpaid += 1;
+      }
+      const months = Object.keys(byMonth).sort().reverse();
+      const maxTotal = Math.max(1, ...months.map((m) => byMonth[m].paid + byMonth[m].unpaid));
+
+      container.innerHTML = months.map((m) => {
+        const { paid, unpaid } = byMonth[m];
+        const total = paid + unpaid;
+        const paidPct = (paid / maxTotal) * 100;
+        const unpaidPct = (unpaid / maxTotal) * 100;
+        return `
+        <div class="flex items-center gap-3 text-xs">
+          <span class="w-28 shrink-0 text-gray-600 font-medium">${m.replace('_', ' ')}</span>
+          <div class="flex-1 h-4 rounded-full bg-gray-100 overflow-hidden flex">
+            <div style="width:${paidPct}%;background:#10b981" title="Paid: ${paid}"></div>
+            <div style="width:${unpaidPct}%;background:#f59e0b" title="Unpaid & Overdue: ${unpaid}"></div>
+          </div>
+          <span class="w-40 shrink-0 text-gray-500">${paid} paid · ${unpaid} unpaid · ${total} total</span>
+        </div>`;
+      }).join('');
+    }
+
+    function renderArchive() {
+      const filtered = getFilteredArchiveInvoices();
+
+      renderMonthlyReport(filtered);
+
+      const body = el('archiveBody');
+      body.innerHTML = '';
+      el('archiveEmptyState').classList.toggle('hidden', filtered.length > 0);
+      el('archiveCount').textContent = `${filtered.length} invoice${filtered.length === 1 ? '' : 's'}`;
+
+      for (const inv of filtered) {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50/70 transition';
+        tr.innerHTML = `
+          <td class="px-4 py-3">${entityPill(inv.entity)}</td>
+          <td class="px-4 py-3">${carrierPill(inv.provider)}</td>
+          <td class="px-4 py-3 font-medium text-gray-900">${inv.account_number}</td>
+          <td class="px-4 py-3">${locationPill(inv.location)}</td>
+          <td class="px-4 py-3 text-gray-700">${inv.branch || '<span class="text-gray-300">—</span>'}</td>
+          <td class="px-4 py-3 text-gray-600">${inv.month.replace('_', ' ')}</td>
+          <td class="px-4 py-3">${statusBadge(inv.status)}</td>
+          <td class="px-4 py-3 text-gray-400 text-xs">${inv.filename}</td>
+          <td class="px-4 py-3">
+            <button class="archive-download-btn text-indigo-600 hover:text-indigo-500 text-sm font-medium"
+              data-entity="${inv.entity}" data-provider="${inv.provider}" data-account="${inv.account_number}" data-month="${inv.month}"
+              data-status="${inv.status}" data-filename="${inv.filename}">
+              Download
+            </button>
+          </td>`;
+        body.appendChild(tr);
+      }
+
+      document.querySelectorAll('.archive-download-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const params = new URLSearchParams({
+            entity: btn.dataset.entity,
+            provider: btn.dataset.provider,
+            account_number: btn.dataset.account,
+            month: btn.dataset.month,
+            status: btn.dataset.status,
+            filename: btn.dataset.filename,
+          });
+          window.location.href = `${API}/api/invoices/file?${params.toString()}`;
+        });
+      });
+    }
+
+    async function loadArchive() {
+      const res = await fetch(`${API}/api/invoices`);
+      const data = await res.json();
+      archiveInvoices = data.invoices || [];
+      populateArchiveEntityCarrierFilters();
+      populateArchiveMonthAccountFilters();
+      renderArchive();
+    }
+
+    async function loadEntities() {
+      const res = await fetch(`${API}/api/entities`);
+      const data = await res.json();
+      if (data.entities && data.entities.length) ENTITIES = data.entities;
+      if (data.carriers && data.carriers.length) CARRIERS = data.carriers;
+      if (data.accounts) ACCOUNTS = data.accounts;
+      renderEntityTabs();
+      renderCarrierTabs();
+      renderAccountTabs();
+      updateRefreshLabel();
+    }
+
+    async function loadAccounts() {
+      const params = new URLSearchParams();
+      if (activeEntity) params.set('entity', activeEntity);
+      if (activeCarrier) params.set('provider', activeCarrier);
+      const query = params.toString();
+      const res = await fetch(`${API}/api/accounts${query ? '?' + query : ''}`);
+      const data = await res.json();
+      // Entities Overview compares entities regardless of table sub-filters
+      // (only hidden entirely once a specific entity tab is active — see
+      // renderEntityCards); everything else is derived client-side in
+      // setTableAccounts -> renderTable -> updateVisualizations so it
+      // reacts to Status/Month/Account/Location/Store/search filters too.
+      renderEntityCards(data.by_entity);
+      setTableAccounts(data.accounts);
+    }
+
+    function setRefreshing(isRefreshing) {
+      el('refreshBtn').disabled = isRefreshing;
+      el('refreshSpinner').classList.toggle('hidden', !isRefreshing);
+      if (!isRefreshing) updateRefreshLabel();
+    }
+
+    function openOtpModal(entity, provider, accountSlot) {
+      el('otpTitle').textContent = `Enter OTP for ${entity} · ${provider} – ${accountSlotLabel(entity, provider, accountSlot)}`;
+      el('otpModal').classList.remove('hidden');
+      el('otpInput').value = '';
+      el('otpInput').focus();
+    }
+
+    function closeOtpModal() {
+      el('otpModal').classList.add('hidden');
+    }
+
+    async function pollJob() {
+      if (!currentJobId) return;
+      const res = await fetch(`${API}/api/jobs/${currentJobId}`);
+      if (!res.ok) {
+        clearInterval(pollTimer);
+        setRefreshing(false);
+        showBanner('Lost track of the refresh job.', 'error');
+        return;
+      }
+      const job = await res.json();
+      const target = `${job.entity} · ${job.provider} – ${accountSlotLabel(job.entity, job.provider, job.account_slot)}`;
+
+      const liveControlAction = { label: 'Open Live Browser Control', onClick: () => openLiveControl(currentJobId) };
+
+      if (job.status === 'waiting_otp') {
+        openOtpModal(job.entity, job.provider, job.account_slot);
+        showBanner(job.message || `Waiting for ${target} OTP…`, 'info', liveControlAction);
+      } else if (job.status === 'running' || job.status === 'pending') {
+        closeOtpModal();
+        showBanner(job.message || `Working on ${target}…`, 'info', liveControlAction);
+      } else if (job.status === 'completed') {
+        clearInterval(pollTimer);
+        closeOtpModal();
+        closeLiveControl();
+        showBanner(job.message || `${target} refresh complete.`, 'success');
+        await loadAccounts();
+        await loadArchive();
+        await runNextInQueue();
+      } else if (job.status === 'failed') {
+        clearInterval(pollTimer);
+        closeOtpModal();
+        closeLiveControl();
+        showBanner(job.message || `${target} refresh failed.`, 'error');
+        await runNextInQueue();
+      }
+    }
+
+    // ---- Live Browser Control: canvas-based view of the automation
+    // browser's screen (CDP screencast over WebSocket), with mouse/keyboard
+    // forwarded back the same way. See backend/app/live_control.py. ----
+    let liveControlWs = null;
+    let liveControlRemoteSize = { width: 1280, height: 800 };
+
+    function openLiveControl(jobId) {
+      if (!jobId || liveControlWs) return;
+      el('liveControlModal').classList.remove('hidden');
+      el('liveControlStatus').textContent = 'Connecting…';
+
+      const canvas = el('liveControlCanvas');
+      const ctx = canvas.getContext('2d');
+      const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
+      const ws = new WebSocket(`${wsProtocol}://${location.host}/ws/jobs/${jobId}/live`);
+      liveControlWs = ws;
+
+      ws.onopen = () => { el('liveControlStatus').textContent = 'Live — click into the view to interact.'; };
+      ws.onclose = () => { if (liveControlWs === ws) { el('liveControlStatus').textContent = 'Disconnected.'; liveControlWs = null; } };
+      ws.onerror = () => { el('liveControlStatus').textContent = 'Connection error.'; };
+
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'error') {
+          el('liveControlStatus').textContent = msg.message;
+          return;
+        }
+        if (msg.type === 'frame') {
+          if (msg.width && msg.height) liveControlRemoteSize = { width: msg.width, height: msg.height };
+          const img = new Image();
+          img.onload = () => {
+            if (canvas.width !== img.width || canvas.height !== img.height) {
+              canvas.width = img.width;
+              canvas.height = img.height;
+            }
+            ctx.drawImage(img, 0, 0);
+          };
+          img.src = `data:image/jpeg;base64,${msg.data}`;
+        }
+      };
+
+      // Translates a canvas-relative pixel to the remote page's own
+      // coordinate space (the canvas is often displayed at a different CSS
+      // size than the actual remote viewport).
+      function toRemoteCoords(e) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+      }
+
+      const send = (obj) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); };
+
+      canvas.addEventListener('mousemove', (e) => {
+        const { x, y } = toRemoteCoords(e);
+        send({ type: 'mouse', event: 'mouseMoved', x, y });
+      });
+      canvas.addEventListener('mousedown', (e) => {
+        canvas.focus();
+        const { x, y } = toRemoteCoords(e);
+        send({ type: 'mouse', event: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+      });
+      canvas.addEventListener('mouseup', (e) => {
+        const { x, y } = toRemoteCoords(e);
+        send({ type: 'mouse', event: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+      });
+      canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const { x, y } = toRemoteCoords(e);
+        send({ type: 'mouse', event: 'mouseWheel', x, y, deltaX: e.deltaX, deltaY: e.deltaY });
+      }, { passive: false });
+      canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+      // Canvas can't receive text composition directly, so keyboard focus
+      // is captured on the canvas itself (tabindex) and forwarded as raw
+      // key events for control keys, or Input.insertText for printable
+      // characters (handles OTP digits and any text field robustly without
+      // needing a full keycode table).
+      canvas.setAttribute('tabindex', '0');
+      const specialKeys = {
+        Enter: 'Enter', Backspace: 'Backspace', Tab: 'Tab', Escape: 'Escape',
+        ArrowLeft: 'ArrowLeft', ArrowRight: 'ArrowRight', ArrowUp: 'ArrowUp', ArrowDown: 'ArrowDown', Delete: 'Delete',
+      };
+      canvas.addEventListener('keydown', (e) => {
+        e.preventDefault();
+        if (specialKeys[e.key]) {
+          send({ type: 'key', event: 'rawKeyDown', key: e.key, code: e.code });
+        } else if (e.key.length === 1) {
+          send({ type: 'text', text: e.key });
+        }
+      });
+      canvas.addEventListener('keyup', (e) => {
+        e.preventDefault();
+        if (specialKeys[e.key]) {
+          send({ type: 'key', event: 'keyUp', key: e.key, code: e.code });
+        }
+      });
+    }
+
+    function closeLiveControl() {
+      el('liveControlModal').classList.add('hidden');
+      if (liveControlWs) {
+        liveControlWs.close();
+        liveControlWs = null;
+      }
+    }
+
+    el('liveControlClose').addEventListener('click', closeLiveControl);
+
+    async function startRefreshFor(target) {
+      el('refreshLabel').textContent = `Refreshing ${target.entity} · ${target.provider} – ${accountSlotLabel(target.entity, target.provider, target.account_slot)}…`;
+      const res = await fetch(`${API}/api/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(target),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Failed to start refresh for ${target.entity} / ${target.provider}.`);
+      }
+      const data = await res.json();
+      currentJobId = data.job_id;
+      pollTimer = setInterval(pollJob, 2000);
+      pollJob();
+    }
+
+    async function runNextInQueue() {
+      if (refreshQueue.length === 0) {
+        setRefreshing(false);
+        return;
+      }
+      const next = refreshQueue.shift();
+      try {
+        await startRefreshFor(next);
+      } catch (e) {
+        const isStuck = /already running/i.test(e.message || '');
+        showBanner(e.message, 'error', isStuck ? {
+          label: 'Reset stuck job & retry',
+          onClick: async () => {
+            hideBanner();
+            await fetch(`${API}/api/jobs/reset`, { method: 'POST' });
+            refreshQueue.unshift(next);
+            await runNextInQueue();
+          },
+        } : null);
+        setRefreshing(false);
+      }
+    }
+
+    function slotsFor(entity, carrier) {
+      return (ACCOUNTS[entity] && ACCOUNTS[entity][carrier] && ACCOUNTS[entity][carrier].length)
+        ? ACCOUNTS[entity][carrier]
+        : [{ slot: 1, label: 'Account 1' }];
+    }
+
+    el('refreshBtn').addEventListener('click', async () => {
+      hideBanner();
+      setRefreshing(true);
+      if (!activeEntity) {
+        refreshQueue = ENTITIES.flatMap((e) =>
+          CARRIERS.flatMap((c) => slotsFor(e, c).map((s) => ({ entity: e, provider: c, account_slot: s.slot })))
+        );
+      } else if (!activeCarrier) {
+        refreshQueue = CARRIERS.flatMap((c) => slotsFor(activeEntity, c).map((s) => ({ entity: activeEntity, provider: c, account_slot: s.slot })));
+      } else if (activeAccountSlot === '') {
+        refreshQueue = slotsFor(activeEntity, activeCarrier).map((s) => ({ entity: activeEntity, provider: activeCarrier, account_slot: s.slot }));
+      } else {
+        refreshQueue = [{ entity: activeEntity, provider: activeCarrier, account_slot: activeAccountSlot }];
+      }
+      await runNextInQueue();
+    });
+
+    el('otpSubmit').addEventListener('click', async () => {
+      const otp = el('otpInput').value.trim();
+      if (!otp) return;
+      try {
+        const res = await fetch(`${API}/api/jobs/${currentJobId}/otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ otp }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || 'Failed to submit OTP.');
+        }
+        closeOtpModal();
+      } catch (e) {
+        showBanner(e.message, 'error');
+      }
+    });
+
+    el('otpCancel').addEventListener('click', () => {
+      closeOtpModal();
+      clearInterval(pollTimer);
+      refreshQueue = [];
+      setRefreshing(false);
+      showBanner('OTP entry cancelled.', 'error');
+    });
+
+    el('downloadAllBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      el('downloadAllMenu').classList.toggle('hidden');
+    });
+
+    document.addEventListener('click', () => {
+      el('downloadAllMenu').classList.add('hidden');
+    });
+
+    document.querySelectorAll('.download-all-option').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        el('downloadAllMenu').classList.add('hidden');
+        const params = new URLSearchParams();
+        if (activeEntity) params.set('entity', activeEntity);
+        if (activeCarrier) params.set('provider', activeCarrier);
+        if (btn.dataset.status) params.set('status', btn.dataset.status);
+        const query = params.toString();
+        window.location.href = `${API}/api/download-all${query ? '?' + query : ''}`;
+      });
+    });
+
+    let searchDebounce = null;
+    el('searchInput').addEventListener('input', (e) => {
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => {
+        searchTerm = e.target.value.trim();
+        currentPage = 1;
+        renderTable();
+      }, 200);
+    });
+
+    el('statusFilter').addEventListener('change', (e) => {
+      statusFilterValue = e.target.value;
+      currentPage = 1;
+      renderTable();
+    });
+
+    el('monthFilter').addEventListener('change', (e) => {
+      monthFilterValue = e.target.value;
+      currentPage = 1;
+      renderTable();
+    });
+
+    el('accountFilter').addEventListener('change', (e) => {
+      accountFilterValue = e.target.value;
+      currentPage = 1;
+      renderTable();
+    });
+
+    el('locationFilter').addEventListener('change', (e) => {
+      locationFilterValue = e.target.value;
+      currentPage = 1;
+      renderTable();
+    });
+
+    el('branchFilter').addEventListener('change', (e) => {
+      branchFilterValue = e.target.value;
+      currentPage = 1;
+      renderTable();
+    });
+
+    el('clearFiltersBtn').addEventListener('click', () => {
+      searchTerm = '';
+      statusFilterValue = '';
+      monthFilterValue = '';
+      accountFilterValue = '';
+      locationFilterValue = '';
+      branchFilterValue = '';
+      activeAccountSlot = '';
+      el('searchInput').value = '';
+      el('statusFilter').value = '';
+      el('monthFilter').value = '';
+      el('accountFilter').value = '';
+      el('locationFilter').value = '';
+      el('branchFilter').value = '';
+      currentPage = 1;
+      renderAccountTabs();
+      updateRefreshLabel();
+      renderTable();
+    });
+
+    el('exportAccountsBtn').addEventListener('click', () => {
+      const rows = getFilteredAccounts(); // every matching row, not just the current page
+      exportToCsv('accounts.csv', rows, [
+        { key: 'entity', label: 'Entity' },
+        { key: 'provider', label: 'Carrier' },
+        { key: 'account_number', label: 'Account Number' },
+        { key: 'location', label: 'Location' },
+        { key: 'branch', label: 'Branch' },
+        { key: 'status', label: 'Status' },
+        { key: 'status_detail', label: 'Status Detail' },
+        { key: 'due_date', label: 'Due Date' },
+        { key: 'amount', label: 'Amount (SAR)' },
+      ]);
+    });
+
+    el('pageSizeSelect').addEventListener('change', (e) => {
+      pageSize = Number(e.target.value);
+      currentPage = 1;
+      renderTable();
+    });
+
+    el('prevPageBtn').addEventListener('click', () => {
+      if (currentPage > 1) {
+        currentPage -= 1;
+        renderTable();
+      }
+    });
+
+    el('nextPageBtn').addEventListener('click', () => {
+      currentPage += 1;
+      renderTable();
+    });
+
+    el('archiveEntityFilter').addEventListener('change', (e) => {
+      archiveEntityFilter = e.target.value;
+      populateArchiveMonthAccountFilters();
+      renderArchive();
+    });
+
+    el('archiveCarrierFilter').addEventListener('change', (e) => {
+      archiveCarrierFilter = e.target.value;
+      populateArchiveMonthAccountFilters();
+      renderArchive();
+    });
+
+    el('archiveMonthFilter').addEventListener('change', (e) => {
+      archiveMonthFilter = e.target.value;
+      renderArchive();
+    });
+
+    el('archiveAccountFilter').addEventListener('change', (e) => {
+      archiveAccountFilter = e.target.value;
+      renderArchive();
+    });
+
+    el('archiveLocationFilter').addEventListener('change', (e) => {
+      archiveLocationFilter = e.target.value;
+      renderArchive();
+    });
+
+    el('archiveBranchFilter').addEventListener('change', (e) => {
+      archiveBranchFilter = e.target.value;
+      renderArchive();
+    });
+
+    el('archiveStatusFilter').addEventListener('change', (e) => {
+      archiveStatusFilterValue = e.target.value;
+      renderArchive();
+    });
+
+    el('exportArchiveBtn').addEventListener('click', () => {
+      const rows = getFilteredArchiveInvoices();
+      exportToCsv('invoice_archive.csv', rows, [
+        { key: 'entity', label: 'Entity' },
+        { key: 'provider', label: 'Carrier' },
+        { key: 'account_number', label: 'Account Number' },
+        { key: 'branch', label: 'Branch' },
+        { key: 'location', label: 'Location' },
+        { key: 'month', label: 'Month' },
+        { key: 'status', label: 'Status' },
+        { key: 'filename', label: 'File' },
+      ]);
+    });
+
+    // Permanently deletes every downloaded invoice on disk (all entities/
+    // carriers/accounts/months) AND the latest-scrape snapshot behind the
+    // Dashboard's cards/table — irreversible, so this requires typing an
+    // exact confirmation phrase rather than a single OK/Cancel click.
+    // Leaves the Master Data (Location/Branch) directory untouched. Wired
+    // to buttons on both the Dashboard and Invoice Archive views.
+    async function handleClearData() {
+      const count = archiveInvoices.length;
+      const typed = prompt(
+        `This will PERMANENTLY delete all ${count} downloaded invoice file(s) across every entity, carrier, account, and month, ` +
+        `and reset the Dashboard back to empty (until your next Refresh). This cannot be undone.\n\nType DELETE to confirm:`
+      );
+      if (typed !== 'DELETE') return;
+
+      try {
+        const res = await fetch(`${API}/api/data/clear`, { method: 'POST' });
+        if (!res.ok) throw new Error('Failed to clear data.');
+        const data = await res.json();
+        showBanner(`Deleted ${data.files_deleted} invoice file(s). Dashboard and Invoice Archive are now empty.`, 'success');
+        await loadAccounts();
+        await loadArchive();
+      } catch (e) {
+        showBanner(e.message, 'error');
+      }
+    }
+
+    el('clearDataBtn').addEventListener('click', handleClearData);
+    el('clearDataBtnDashboard').addEventListener('click', handleClearData);
+
+    // ---- Master Data (Location/Branch directory) — CRUD ----
+
+    function populateMasterFilterDropdowns() {
+      const entitySelect = el('masterEntityFilter');
+      const prevEntity = entitySelect.value;
+      entitySelect.innerHTML = '<option value="">All Entities</option>' +
+        ENTITIES.map((e) => `<option value="${e}">${e}</option>`).join('');
+      entitySelect.value = ENTITIES.includes(prevEntity) ? prevEntity : '';
+
+      const carrierSelect = el('masterCarrierFilter');
+      const prevCarrier = carrierSelect.value;
+      carrierSelect.innerHTML = '<option value="">All Carriers</option>' +
+        CARRIERS.map((c) => `<option value="${c}">${c}</option>`).join('');
+      carrierSelect.value = CARRIERS.includes(prevCarrier) ? prevCarrier : '';
+
+      const entityFieldSelect = el('masterFieldEntity');
+      entityFieldSelect.innerHTML = ENTITIES.map((e) => `<option value="${e}">${e}</option>`).join('');
+      const carrierFieldSelect = el('masterFieldCarrier');
+      carrierFieldSelect.innerHTML = CARRIERS.map((c) => `<option value="${c}">${c}</option>`).join('');
+    }
+
+    async function loadMasterData() {
+      const params = new URLSearchParams();
+      if (masterEntityFilter) params.set('entity', masterEntityFilter);
+      if (masterCarrierFilter) params.set('provider', masterCarrierFilter);
+      if (masterSearchTerm) params.set('search', masterSearchTerm);
+      params.set('limit', MASTER_PAGE_SIZE);
+      params.set('offset', (masterPage - 1) * MASTER_PAGE_SIZE);
+
+      const res = await fetch(`${API}/api/master/accounts?${params.toString()}`);
+      const data = await res.json();
+      masterRows = data.rows || [];
+      masterTotal = data.total || 0;
+      renderMasterTable();
+    }
+
+    function renderMasterTable() {
+      const body = el('masterBody');
+      body.innerHTML = '';
+      el('masterEmptyState').classList.toggle('hidden', masterRows.length > 0);
+      el('masterCount').textContent = `${masterTotal} row${masterTotal === 1 ? '' : 's'}`;
+
+      for (const row of masterRows) {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50/70 transition';
+        tr.innerHTML = `
+          <td class="px-4 py-3">${row.entity ? entityPill(row.entity) : ''}</td>
+          <td class="px-4 py-3">${row.carrier ? carrierPill(row.carrier) : ''}</td>
+          <td class="px-4 py-3 text-gray-700">${row.location ? locationPill(row.location) : '<span class="text-gray-300">—</span>'}</td>
+          <td class="px-4 py-3 text-gray-500">${row.cr || ''}</td>
+          <td class="px-4 py-3 font-medium text-gray-900">${row.branch || ''}</td>
+          <td class="px-4 py-3 text-gray-600">${row.cost_center || ''}</td>
+          <td class="px-4 py-3 text-gray-600">${row.department || ''}</td>
+          <td class="px-4 py-3 text-gray-600">${row.account_number || ''}</td>
+          <td class="px-4 py-3 text-gray-600">${row.status || ''}</td>
+          <td class="px-4 py-3 whitespace-nowrap">
+            <button data-id="${row.id}" class="master-edit-btn text-indigo-600 hover:text-indigo-500 text-sm font-medium mr-3">Edit</button>
+            <button data-id="${row.id}" class="master-delete-btn text-rose-600 hover:text-rose-500 text-sm font-medium">Delete</button>
+          </td>`;
+        body.appendChild(tr);
+      }
+
+      document.querySelectorAll('.master-edit-btn').forEach((btn) => {
+        btn.addEventListener('click', () => openMasterModal(Number(btn.dataset.id)));
+      });
+      document.querySelectorAll('.master-delete-btn').forEach((btn) => {
+        btn.addEventListener('click', () => deleteMasterRow(Number(btn.dataset.id)));
+      });
+
+      const totalPages = Math.max(1, Math.ceil(masterTotal / MASTER_PAGE_SIZE));
+      const start = masterTotal === 0 ? 0 : (masterPage - 1) * MASTER_PAGE_SIZE + 1;
+      const end = Math.min(masterPage * MASTER_PAGE_SIZE, masterTotal);
+      el('masterPaginationInfo').textContent = `Showing ${start}–${end} of ${masterTotal}`;
+      el('masterPageIndicator').textContent = `Page ${masterPage} of ${totalPages}`;
+      el('masterPrevPageBtn').disabled = masterPage <= 1;
+      el('masterNextPageBtn').disabled = masterPage >= totalPages;
+    }
+
+    const MASTER_FIELD_IDS = {
+      entity: 'masterFieldEntity', carrier: 'masterFieldCarrier', location: 'masterFieldLocation',
+      cr: 'masterFieldCr', branch: 'masterFieldBranch', cost_center: 'masterFieldCostCenter',
+      department: 'masterFieldDepartment',
+      connection: 'masterFieldConnection', account_number: 'masterFieldAccountNumber',
+      service_number: 'masterFieldServiceNumber', serial_number: 'masterFieldSerialNumber',
+      status: 'masterFieldStatus', package: 'masterFieldPackage', notes: 'masterFieldNotes',
+    };
+
+    function openMasterModal(id) {
+      masterEditingId = id || null;
+      el('masterModalTitle').textContent = id ? 'Edit Master Data Row' : 'Add Master Data Row';
+
+      const existing = id ? masterRows.find((r) => r.id === id) : null;
+      for (const [field, elemId] of Object.entries(MASTER_FIELD_IDS)) {
+        el(elemId).value = (existing && existing[field]) || (field === 'entity' ? ENTITIES[0] : field === 'carrier' ? CARRIERS[0] : '');
+      }
+      el('masterModal').classList.remove('hidden');
+    }
+
+    function closeMasterModal() {
+      el('masterModal').classList.add('hidden');
+      masterEditingId = null;
+    }
+
+    async function saveMasterModal() {
+      const payload = {};
+      for (const [field, elemId] of Object.entries(MASTER_FIELD_IDS)) {
+        const value = el(elemId).value.trim();
+        payload[field] = value || null;
+      }
+
+      const url = masterEditingId ? `${API}/api/master/accounts/${masterEditingId}` : `${API}/api/master/accounts`;
+      const method = masterEditingId ? 'PUT' : 'POST';
+      try {
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || 'Failed to save master data row.');
+        }
+        closeMasterModal();
+        await loadMasterData();
+      } catch (e) {
+        showBanner(e.message, 'error');
+      }
+    }
+
+    async function deleteMasterRow(id) {
+      if (!confirm('Delete this master data row? This cannot be undone.')) return;
+      try {
+        const res = await fetch(`${API}/api/master/accounts/${id}`, { method: 'DELETE' });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || 'Failed to delete row.');
+        }
+        await loadMasterData();
+      } catch (e) {
+        showBanner(e.message, 'error');
+      }
+    }
+
+    el('masterAddBtn').addEventListener('click', () => openMasterModal(null));
+    el('masterModalCancel').addEventListener('click', closeMasterModal);
+    el('masterModalSave').addEventListener('click', saveMasterModal);
+
+    let masterSearchDebounce = null;
+    el('masterSearchInput').addEventListener('input', (e) => {
+      clearTimeout(masterSearchDebounce);
+      masterSearchDebounce = setTimeout(() => {
+        masterSearchTerm = e.target.value.trim();
+        masterPage = 1;
+        loadMasterData();
+      }, 250);
+    });
+
+    el('masterEntityFilter').addEventListener('change', (e) => {
+      masterEntityFilter = e.target.value;
+      masterPage = 1;
+      loadMasterData();
+    });
+
+    el('masterCarrierFilter').addEventListener('change', (e) => {
+      masterCarrierFilter = e.target.value;
+      masterPage = 1;
+      loadMasterData();
+    });
+
+    el('exportMasterBtn').addEventListener('click', async () => {
+      // Master Data is server-paginated (masterRows only holds the current
+      // page), so an accurate export needs every matching row fetched
+      // fresh with the same active filters, not just what's on screen.
+      const btn = el('exportMasterBtn');
+      const originalLabel = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = 'Exporting…';
+      try {
+        const params = new URLSearchParams();
+        if (masterEntityFilter) params.set('entity', masterEntityFilter);
+        if (masterCarrierFilter) params.set('provider', masterCarrierFilter);
+        if (masterSearchTerm) params.set('search', masterSearchTerm);
+        params.set('limit', 100000);
+        params.set('offset', 0);
+        const res = await fetch(`${API}/api/master/accounts?${params.toString()}`);
+        const data = await res.json();
+        exportToCsv('master_data.csv', data.rows || [], [
+          { key: 'entity', label: 'Entity' },
+          { key: 'carrier', label: 'Carrier' },
+          { key: 'location', label: 'Location' },
+          { key: 'cr', label: 'CR' },
+          { key: 'branch', label: 'Branch / Store' },
+          { key: 'cost_center', label: 'Cost Center' },
+          { key: 'department', label: 'Department' },
+          { key: 'connection', label: 'Connection' },
+          { key: 'account_number', label: 'Account Number' },
+          { key: 'service_number', label: 'Service Number' },
+          { key: 'serial_number', label: 'Serial Number' },
+          { key: 'status', label: 'Status' },
+          { key: 'package', label: 'Package' },
+          { key: 'notes', label: 'Notes' },
+        ]);
+      } catch (e) {
+        showBanner('Failed to export master data.', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalLabel;
+      }
+    });
+
+    el('masterPrevPageBtn').addEventListener('click', () => {
+      if (masterPage > 1) {
+        masterPage -= 1;
+        loadMasterData();
+      }
+    });
+
+    el('masterNextPageBtn').addEventListener('click', () => {
+      const totalPages = Math.max(1, Math.ceil(masterTotal / MASTER_PAGE_SIZE));
+      if (masterPage < totalPages) {
+        masterPage += 1;
+        loadMasterData();
+      }
+    });
+
+    // ---- Sidebar navigation: switch between the three main views ----
+    const VIEW_TITLES = { dashboard: 'Dashboard', archive: 'Invoice Archive', master: 'Master Data' };
+
+    function switchView(view) {
+      document.querySelectorAll('.view').forEach((v) => v.classList.add('hidden'));
+      document.querySelectorAll('.nav-item').forEach((n) => n.classList.remove('nav-item-active'));
+      el(`view-${view}`).classList.remove('hidden');
+      const activeNav = document.querySelector(`.nav-item[data-view="${view}"]`);
+      if (activeNav) activeNav.classList.add('nav-item-active');
+      el('viewTitle').textContent = VIEW_TITLES[view] || view;
+      // Refresh/Download All only make sense on the Dashboard view.
+      el('dashboardActions').classList.toggle('hidden', view !== 'dashboard');
+    }
+
+    document.querySelectorAll('.nav-item').forEach((btn) => {
+      btn.addEventListener('click', () => switchView(btn.dataset.view));
+    });
+
+    (async function init() {
+      switchView('dashboard');
+      await loadEntities();
+      populateMasterFilterDropdowns();
+      await loadAccounts();
+      await loadArchive();
+      await loadMasterData();
+    })();
+  </script>
+</body>
+</html>
