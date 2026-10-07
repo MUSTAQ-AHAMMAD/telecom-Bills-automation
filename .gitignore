@@ -1,8 +1,13 @@
 backend/.env
 backend/data/Root/
 backend/data/accounts.json
+backend/data/account_slots.json
 backend/data/master.db
 backend/venv/
 backend/__pycache__/
 backend/app/__pycache__/
 *.pyc
+backend/data/oracle_sync.db
+backend/data/oracle_mappings.json
+backend/data/*.bak-*
+backend/data/oracle_settings.json

@@ -10,6 +10,7 @@ from .file_organizer import invoice_file_path, find_existing_invoice_for_month
 from .jobs import Job
 from .models import Account
 from .data_store import save_accounts_for_account_slot
+from .oracle_sync import record_invoice_amounts
 from . import live_control
 
 
@@ -424,6 +425,7 @@ async def run_scrape_job(job: Job, entity: str, provider: str, account_slot: int
                 await live_control.unregister(job.job_id)
 
         save_accounts_for_account_slot(entity, provider, account_slot, accounts)
+        record_invoice_amounts(accounts)
         job.accounts = accounts
         job.status = "completed"
         job.message = f"Scraped {len(accounts)} account(s) for {entity} / {provider} ({credentials.label or f'Account {account_slot}'})."
