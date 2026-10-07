@@ -86,3 +86,30 @@ class MasterAccountInput(BaseModel):
     package: Optional[str] = None
     notes: Optional[str] = None
     cost_center: Optional[str] = None
+    dept_code: Optional[str] = None
+
+
+class OracleSyncRequest(BaseModel):
+    """Which archived invoices to push to Oracle Fusion as Purchase Requisitions."""
+    entity: Optional[str] = None
+    provider: Optional[str] = None
+    month: Optional[str] = None  # archive month folder, e.g. "August_2026"
+    status: Optional[str] = "Unpaid"  # "Paid" / "Unpaid", or null for both
+    dry_run: bool = False  # preview payloads only (also forced while ORACLE_LIVE_MODE=false)
+    account_number: Optional[str] = None
+
+
+class InvoiceRef(BaseModel):
+    entity: str
+    provider: str
+    account_number: str
+    month: str
+
+
+class InvoiceAmountInput(InvoiceRef):
+    amount: float
+
+
+class BulkSyncRequest(BaseModel):
+    """Invoices selected in the dashboard to create in Oracle one after another."""
+    invoices: List[InvoiceRef]

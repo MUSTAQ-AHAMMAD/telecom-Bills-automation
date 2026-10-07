@@ -1,3 +1,4 @@
+import json
 import os
 from functools import lru_cache
 from typing import List
@@ -130,6 +131,62 @@ class AccountCredentials(BaseSettings):
     password: str = ""
 
 
+class OracleSettings(BaseSettings):
+    """
+    Oracle Fusion Cloud Procurement integration (see app/oracle_sync.py),
+    loaded from ORACLE_* env vars. ID lookup tables (Business Units,
+    Suppliers/Sites, GL charge accounts) live in the JSON file at
+    `mappings_path` rather than here, since they're nested per entity/carrier.
+    """
+
+    model_config = SettingsConfigDict(env_file=ENV_FILE, env_file_encoding="utf-8", extra="ignore", env_prefix="ORACLE_")
+
+    base_url: str = ""  # e.g. https://xxxx.fa.em2.oraclecloud.com
+    api_version: str = "11.13.18.05"
+    username: str = ""
+    password: str = ""
+    timeout_seconds: int = 60
+
+    # Safety switch: while false, a sync only builds and returns the payloads
+    # it *would* send — nothing is created or submitted in Oracle.
+    live_mode: bool = False
+    # Submit each requisition for approval after creating + attaching it.
+    auto_submit: bool = True
+
+    preparer_email: str = ""  # PreparerEmail on the requisition header
+    requester_email: str = ""  # RequesterEmail on lines; defaults to preparer_email when blank
+    preparer_id: str = ""  # Person ID of the system integration user (if the payload template uses IDs)
+    requester_id: str = ""  # defaults to preparer_id when blank
+    line_type: str = "ORA_Rate Based Services"
+    item_number: str = ""  # Oracle Item on the requisition line ({item})
+    quantity: float = 1  # line / distribution Quantity ({quantity})
+    category_name: str = "IT - Mobile & Internet"
+    need_by_days: int = 2  # {need_by_date} = invoice date + this many days (RequestedDeliveryDate)
+    currency_code: str = "SAR"
+    # Oracle attachment category CODE (not its display name): Oracle answers 201
+    # for an unknown one but drops the file. Valid on requisition lines:
+    # REQ_INTERNAL, TO_SUPPLIER, TO_BUYER, TO_APPROVER, MISC.
+    attachment_category: str = "REQ_INTERNAL"
+
+    mappings_path: str = os.path.join(os.path.dirname(__file__), "..", "data", "oracle_mappings.json")
+
+    # Monthly trigger: on/after this day of the month, a background check
+    # syncs that month's Unpaid invoices once. 0 disables the schedule
+    # (sync is then only run via POST /api/oracle/sync).
+    schedule_day_of_month: int = 0
+
+    # Procurement Administrator alerts (unmapped cost centers, failures).
+    # Alerts are always stored and listed at GET /api/oracle/alerts; email
+    # is only sent when SMTP is configured.
+    admin_email: str = ""
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_starttls: bool = True
+
+
 @lru_cache
 def get_carrier_settings(carrier: str) -> CarrierSettings:
     if carrier not in CARRIER_NAMES:
@@ -165,3 +222,39 @@ def list_account_slots(entity: str, carrier: str) -> List[dict]:
 
 
 settings = Settings()
+
+# Oracle settings edited from the dashboard are saved here and take
+# precedence over .env, so the integration can be configured without
+# editing files or restarting the server.
+ORACLE_SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "oracle_settings.json")
+
+
+def _load_oracle_overrides() -> dict:
+    if not os.path.isfile(ORACLE_SETTINGS_PATH):
+        return {}
+    with open(ORACLE_SETTINGS_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_oracle_settings(changes: dict) -> None:
+    """
+    Validates and persists dashboard edits, then applies them to the shared
+    `oracle_settings` object in place (other modules hold a reference to it).
+    Raises pydantic.ValidationError on a bad value.
+    """
+    allowed = set(OracleSettings.model_fields) - {"mappings_path"}
+    overrides = _load_oracle_overrides()
+    overrides.update({k: v for k, v in changes.items() if k in allowed})
+    if overrides.get("base_url"):
+        # Keep just the pod host if a full REST endpoint was pasted.
+        host = overrides["base_url"].strip().split("/fscmRestApi")[0].rstrip("/")
+        overrides["base_url"] = host[:-4] if host.startswith("https://") and host.endswith(":443") else host
+    validated = OracleSettings(**overrides)
+    os.makedirs(os.path.dirname(ORACLE_SETTINGS_PATH), exist_ok=True)
+    with open(ORACLE_SETTINGS_PATH, "w", encoding="utf-8") as f:
+        json.dump({k: getattr(validated, k) for k in overrides}, f, indent=2)
+    for field in OracleSettings.model_fields:
+        setattr(oracle_settings, field, getattr(validated, field))
+
+
+oracle_settings = OracleSettings(**_load_oracle_overrides())

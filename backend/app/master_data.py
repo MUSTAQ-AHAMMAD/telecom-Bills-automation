@@ -14,6 +14,7 @@ skipped entirely.
 import os
 import re
 import sqlite3
+from datetime import datetime
 from typing import Optional
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "master.db")
@@ -146,6 +147,20 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_closed_account_number ON closed_accounts(account_number)")
 
+    # Per-line bill charges for one month (from an "All stores Bills" sheet),
+    # used to split an account's bill across cost centers — see
+    # `bill_line_allocation`. STC's PDF bills can't be read as text, so the
+    # sheet is the source of per-line amounts.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS bill_lines (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            month TEXT, entity TEXT, carrier TEXT, account_number TEXT,
+            service_number TEXT, store TEXT, location TEXT, cost_center TEXT, amount REAL,
+            master_id INTEGER, sheet_row INTEGER
+        )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_bill_lines_account ON bill_lines(entity, carrier, account_number, month)")
+
     existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(master_accounts)")}
     if "cost_center" not in existing_cols:
         conn.execute("ALTER TABLE master_accounts ADD COLUMN cost_center TEXT")
@@ -157,6 +172,8 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         # enrichment from a different source file) survives the next
         # `import_master_excel` run.
         conn.execute("ALTER TABLE master_accounts ADD COLUMN is_manually_edited INTEGER DEFAULT 0")
+    if "dept_code" not in existing_cols:
+        conn.execute("ALTER TABLE master_accounts ADD COLUMN dept_code TEXT")
 
 
 def import_master_excel(path: str) -> dict:
@@ -175,6 +192,11 @@ def import_master_excel(path: str) -> dict:
         raise FileNotFoundError(f"Master spreadsheet not found: {path}")
 
     wb = openpyxl.load_workbook(path, data_only=True)
+    if _flat_header_map(wb.worksheets[0]) is not None:
+        # A single flat sheet with its own Entity/Carrier columns (the
+        # Master Data table's own layout) — merged in, never wiped.
+        return _import_flat_master(wb.worksheets[0])
+
     conn = _connect()
     summary = {}
     try:
@@ -295,28 +317,174 @@ def import_master_excel(path: str) -> dict:
     return summary
 
 
+# Flat layout (one sheet, one row per service line, with its own Entity and
+# Carrier columns — same columns as the Master Data table/export).
+FLAT_HEADER_ALIASES = {
+    **HEADER_ALIASES,
+    "entity": "entity",
+    "carrier": "carrier",
+    "branch / store": "branch",
+    "branch/store": "branch",
+    "cost center": "cost_center",
+    "dept code": "dept_code",
+}
+FLAT_SHEET_NAME = "Master Upload"
+COST_CENTER_WIDTH = 4
+
+
+def _flat_header_map(ws) -> Optional[dict]:
+    """{canonical field: column index} if row 1 is a flat master header (has Entity, Carrier and Service Number), else None."""
+    header = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ())
+    mapping = {}
+    for idx, value in enumerate(header):
+        if value is None:
+            continue
+        field = FLAT_HEADER_ALIASES.get(re.sub(r"\s+", " ", str(value).strip().lower()))
+        if field and field not in mapping:
+            mapping[field] = idx
+    if {"entity", "carrier", "service_number"} <= mapping.keys():
+        return mapping
+    return None
+
+
+def _flat_cell_text(field: str, value) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    text = " ".join(str(value).strip().split())
+    if not text:
+        return None
+    if field == "location":
+        text = text.title()
+    elif field == "cost_center" and text.isdigit():
+        # Excel drops leading zeros (0802 -> 802); cost centers are fixed-width GL segments.
+        text = text.zfill(COST_CENTER_WIDTH)
+    return text
+
+
+def _import_flat_master(ws) -> dict:
+    """
+    Merges a flat master sheet into master_accounts, matching each row to an
+    existing line by (entity, carrier, service_number): matches are updated
+    in place, unknown lines are added. Lines not in the sheet are left
+    untouched. Every touched row is flagged `is_manually_edited` so a later
+    per-carrier workbook import won't wipe it.
+    """
+    columns = _flat_header_map(ws)
+    fields = [f for f in MASTER_ACCOUNT_FIELDS if f in columns]
+    conn = _connect()
+    summary: dict = {}
+    try:
+        _ensure_schema(conn)
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            record = {
+                f: (_normalize_account_number(row[columns[f]]) if f in ("account_number", "service_number")
+                    else _flat_cell_text(f, row[columns[f]]))
+                for f in fields if columns[f] < len(row)
+            }
+            entity, carrier, service = record.get("entity"), record.get("carrier"), record.get("service_number")
+            if not (entity and carrier and service):
+                continue
+            stats = summary.setdefault(f"{ws.title} — {entity} {carrier}", {
+                "entity": entity, "carrier": carrier, "rows_imported": 0,
+                "rows_updated": 0, "rows_added": 0, "rows_preserved": 0,
+            })
+
+            existing = conn.execute(
+                "SELECT id, branch FROM master_accounts WHERE entity = ? AND carrier = ? AND service_number = ?",
+                (entity, carrier, service),
+            ).fetchall()
+            if existing:
+                for row_id, old_branch in existing:
+                    values = dict(record)
+                    # Same leading-zero loss for numeric branch codes (0908 -> 908): keep the stored spelling.
+                    if (old_branch and values.get("branch") and old_branch.isdigit()
+                            and values["branch"].isdigit() and int(old_branch) == int(values["branch"])):
+                        values["branch"] = old_branch
+                    values["is_manually_edited"] = 1
+                    conn.execute(
+                        f"UPDATE master_accounts SET {', '.join(f'{k} = ?' for k in values)} WHERE id = ?",
+                        list(values.values()) + [row_id],
+                    )
+                stats["rows_updated"] += 1
+            else:
+                values = dict(record, sheet_name=FLAT_SHEET_NAME, is_manually_edited=1)
+                conn.execute(
+                    f"INSERT INTO master_accounts ({','.join(values)}) VALUES ({','.join('?' for _ in values)})",
+                    list(values.values()),
+                )
+                stats["rows_added"] += 1
+            stats["rows_imported"] += 1
+
+        for stats in summary.values():
+            stats["reason"] = f"{stats['rows_updated']} updated, {stats['rows_added']} added; lines not in the file kept"
+        conn.commit()
+    finally:
+        conn.close()
+    return summary
+
+
 def _normalize_branch(value) -> str:
     return " ".join(str(value or "").strip().lower().split())
 
 
-def import_store_sheet(path: str) -> dict:
+def _normalize_service_number(value) -> Optional[str]:
+    """
+    Service numbers are written inconsistently across sheets — with or
+    without a leading 0 or the Saudi 966 country code (966831020021512 vs
+    831020021512) — so strip both for comparison purposes only.
+    """
+    text = _normalize_account_number(value)
+    if not text:
+        return None
+    text = text.lstrip("0")
+    if text.startswith("966") and len(text) > 9:
+        text = text[3:]
+    return text or None
+
+
+def _accounts_compatible(master_account: Optional[str], sheet_account: str) -> bool:
+    """
+    True when two account numbers refer to the same account. Mobily's portal
+    uses a long form (1001234009203157) where the store sheet has only the
+    trailing digits (4009203157), so a suffix match counts as the same account.
+    """
+    if not master_account:
+        return True
+    return master_account == sheet_account or master_account.endswith(sheet_account) or sheet_account.endswith(master_account)
+
+
+def import_store_sheet(path: str, bill_month: Optional[str] = None) -> dict:
     """
     Applies a supplementary "All stores Bills"-style spreadsheet — a single
     flat sheet of CR / Store / Service / Acc / Amount / Cost center / Dept
     columns, with no Entity/Carrier/Location of its own — onto the existing
-    master_accounts rows, matched by account number.
+    master_accounts rows.
 
-    Unlike `import_master_excel`, this never inserts new accounts (there's
-    no Entity/Carrier to assign them to) and never deletes anything. For
-    each account number in the sheet:
-      - if exactly one master_accounts row exists for it, that row is
-        updated (unambiguous even if branch names don't match verbatim);
-      - if several rows exist (a bulk account spanning many branches), only
-        the row whose branch name matches (case/whitespace-insensitive) is
-        updated — a bulk account with no matching branch row is left alone
-        rather than guessing which one it means.
+    Never inserts new accounts (there's no Entity/Carrier to assign them to)
+    and never deletes anything. Each sheet row is matched to one master row:
+      1. by service number (the most specific key — one line = one row),
+         narrowed by account number / branch name if several rows share it;
+      2. otherwise by account number (exact, or suffix — see
+         `_accounts_compatible`): a single-row account is unambiguous, a
+         multi-row account needs a matching branch name.
+    A matched row gets its CR (when numeric) and cost center from the sheet, and its
+    account number filled in from the sheet's Acc when the master has none
+    (e.g. the Zain sheets, which carry no account numbers). A match whose
+    master account number contradicts the sheet's Acc is reported as a
+    conflict and left untouched rather than guessed at.
     Updated rows are marked `is_manually_edited` so a later
     `import_master_excel` run won't wipe this enrichment.
+
+    With `bill_month` (an archive month folder, e.g. "August_2026"), each
+    row's Amount is also stored as that month's bill line — replacing any
+    lines previously imported for that month — with its cost center taken
+    from the sheet, else from the matched master row. Rows whose account
+    isn't in the master at all (e.g. another country) are skipped.
+
+    Returns counts plus the unmatched/conflicting sheet rows so they can be
+    fixed by hand.
     """
     import openpyxl  # imported lazily: only needed for this import step
 
@@ -326,22 +494,76 @@ def import_store_sheet(path: str) -> dict:
     wb = openpyxl.load_workbook(path, data_only=True)
     ws = wb[wb.sheetnames[0]]
 
-    header_map = {"cr": "cr", "store": "branch", "service": "service_number", "acc": "account_number", "cost center": "cost_center"}
+    header_map = {
+        "cr": "cr", "store": "branch", "service": "service_number", "acc": "account_number",
+        "cost center": "cost_center", "amount": "amount",
+    }
     headers = []
     for cell in next(ws.iter_rows(min_row=1, max_row=1, values_only=True)):
         key = " ".join(str(cell or "").strip().lower().split())
         headers.append(header_map.get(key))
 
     conn = _connect()
-    result = {"updated": 0, "skipped_unknown_account": 0, "skipped_no_branch_match": 0}
+    result = {
+        "updated": 0,
+        "account_numbers_filled": 0,
+        "unmatched": [],
+        "conflicts": [],
+        "bill_month": bill_month,
+        "bill_lines_recorded": 0,
+        "bill_lines_skipped": [],
+    }
     try:
         _ensure_schema(conn)
         conn.row_factory = sqlite3.Row
-        existing_by_account: dict = {}
-        for row in conn.execute("SELECT id, account_number, branch FROM master_accounts WHERE account_number IS NOT NULL"):
-            existing_by_account.setdefault(row["account_number"], []).append((row["id"], row["branch"]))
+        master_rows = conn.execute(
+            "SELECT id, entity, carrier, account_number, branch, service_number, location, cost_center FROM master_accounts"
+        ).fetchall()
+        if bill_month:
+            conn.execute("DELETE FROM bill_lines WHERE month = ?", (bill_month,))
 
-        for row in ws.iter_rows(min_row=2, values_only=True):
+        def record_bill_line(sheet_row: dict, record: dict, master_row, account_rows: list) -> None:
+            if not bill_month:
+                return
+            try:
+                amount = float(record.get("amount"))
+            except (TypeError, ValueError):
+                return
+            # Which entity/carrier/account the line bills to: the matched
+            # row, else the (single) master account the sheet's Acc refers to.
+            owner = master_row
+            if owner is None or not _accounts_compatible(owner["account_number"], sheet_row["account_number"]):
+                owners = {(r["entity"], r["carrier"], r["account_number"]) for r in account_rows}
+                if len(owners) != 1:
+                    result["bill_lines_skipped"].append({**sheet_row, "amount": amount, "reason": "account not in master data" if not owners else "account ambiguous"})
+                    return
+                owner = account_rows[0]
+                master_row = None
+            cost_center = record.get("cost_center")
+            cost_center = str(cost_center).strip() if cost_center is not None and str(cost_center).strip() else None
+            if cost_center is None and master_row is not None:
+                cost_center = master_row["cost_center"]
+            conn.execute(
+                "INSERT INTO bill_lines (month, entity, carrier, account_number, service_number, store, location, cost_center, amount, master_id, sheet_row) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    bill_month, owner["entity"], owner["carrier"], owner["account_number"] or sheet_row["account_number"],
+                    sheet_row["service_number"], sheet_row["store"],
+                    master_row["location"] if master_row is not None else None,
+                    cost_center, amount, master_row["id"] if master_row is not None else None, sheet_row["row"],
+                ),
+            )
+            result["bill_lines_recorded"] += 1
+        by_service: dict = {}
+        by_account: dict = {}
+        for row in master_rows:
+            service = _normalize_service_number(row["service_number"])
+            if service:
+                by_service.setdefault(service, []).append(row)
+            if row["account_number"]:
+                by_account.setdefault(row["account_number"], []).append(row)
+
+        for row_number, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
             record = {}
             for header, value in zip(headers, row):
                 if header and value is not None:
@@ -350,34 +572,79 @@ def import_store_sheet(path: str) -> dict:
             account_number = _normalize_account_number(record.get("account_number"))
             if not account_number:
                 continue
+            service = _normalize_service_number(record.get("service_number"))
+            branch = _normalize_branch(record.get("branch"))
+            sheet_row = {
+                "row": row_number,
+                "account_number": account_number,
+                "service_number": _normalize_account_number(record.get("service_number")),
+                "store": record.get("branch"),
+            }
 
-            candidates = existing_by_account.get(account_number)
-            if not candidates:
-                result["skipped_unknown_account"] += 1
+            target = None
+            same_account_rows = [
+                r for acc, rows in by_account.items() if _accounts_compatible(acc, account_number) for r in rows
+            ]
+            candidates = by_service.get(service, []) if service else []
+            if len(candidates) > 1:
+                narrowed = [r for r in candidates if _accounts_compatible(r["account_number"], account_number)]
+                if len(narrowed) > 1:
+                    narrowed = [r for r in narrowed if _normalize_branch(r["branch"]) == branch]
+                candidates = narrowed
+            if len(candidates) == 1:
+                target = candidates[0]
+            else:
+                account_rows = same_account_rows
+                if len(account_rows) == 1:
+                    target = account_rows[0]
+                elif account_rows:
+                    matches = [r for r in account_rows if _normalize_branch(r["branch"]) == branch]
+                    if len(matches) == 1:
+                        target = matches[0]
+
+            if target is None:
+                result["unmatched"].append(sheet_row)
+                record_bill_line(sheet_row, record, None, same_account_rows)
+                continue
+            if not _accounts_compatible(target["account_number"], account_number):
+                result["conflicts"].append({**sheet_row, "master_id": target["id"], "master_account_number": target["account_number"], "master_branch": target["branch"]})
+                record_bill_line(sheet_row, record, None, same_account_rows)
                 continue
 
-            if len(candidates) == 1:
-                target_id = candidates[0][0]
-            else:
-                new_branch = _normalize_branch(record.get("branch"))
-                matches = [rid for rid, branch in candidates if _normalize_branch(branch) == new_branch]
-                if len(matches) != 1:
-                    result["skipped_no_branch_match"] += 1
-                    continue
-                target_id = matches[0]
-
-            cr = record.get("cr")
+            # The sheet's CR column holds the carrier name ("Mobily", "Zain")
+            # instead of a CR number for non-STC lines — only take real numbers.
+            cr = _normalize_account_number(record.get("cr"))
+            if cr and not cr.isdigit():
+                cr = None
             cost_center = record.get("cost_center")
+            fill_account = None if target["account_number"] else account_number
             conn.execute(
-                "UPDATE master_accounts SET cr = COALESCE(?, cr), cost_center = ?, is_manually_edited = 1 WHERE id = ?",
-                (str(cr).strip() if cr is not None else None, str(cost_center).strip() if cost_center is not None else None, target_id),
+                # A blank cell never clears a value already in the master
+                # (e.g. one filled by hand), so re-importing is safe.
+                "UPDATE master_accounts SET cr = COALESCE(?, cr), cost_center = COALESCE(?, cost_center), "
+                "account_number = COALESCE(account_number, ?), is_manually_edited = 1 WHERE id = ?",
+                (
+                    cr,
+                    str(cost_center).strip() if cost_center is not None else None,
+                    fill_account,
+                    target["id"],
+                ),
             )
             result["updated"] += 1
+            if fill_account:
+                result["account_numbers_filled"] += 1
+            filled_target = dict(target)
+            filled_target["account_number"] = target["account_number"] or fill_account
+            if record.get("cost_center") is None:
+                filled_target["cost_center"] = target["cost_center"]
+            record_bill_line(sheet_row, record, filled_target, same_account_rows)
 
         conn.commit()
     finally:
         conn.close()
 
+    result["unmatched_count"] = len(result["unmatched"])
+    result["conflicts_count"] = len(result["conflicts"])
     return result
 
 
@@ -426,10 +693,126 @@ def lookup_location(carrier: str, account_number: str) -> Optional[dict]:
         conn.close()
 
 
+def _dept_value(row) -> Optional[str]:
+    """A line's department code for Oracle: Dept Code, or the department name when the code is missing."""
+    for field in ("dept_code", "department"):
+        value = (row[field] or "").strip() if row[field] is not None else ""
+        if value:
+            return value
+    return None
+
+
+def lookup_billing_info(entity: str, carrier: str, account_number: str) -> Optional[dict]:
+    """
+    Location plus every distinct cost center across all service lines under
+    one entity+carrier+account — used to pick the GL charge account when
+    billing that account (see oracle_sync.py). Cost centers are compared
+    ignoring leading zeros, since the source sheets mix "0701" and "701".
+    Returns None if the account isn't in the master at all.
+    """
+    if not account_number:
+        return None
+    conn = _connect()
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT location, branch, cost_center, dept_code, department FROM master_accounts "
+            "WHERE entity = ? AND carrier = ? AND account_number = ?",
+            (entity, carrier, str(account_number)),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        conn.close()
+    if not rows:
+        return None
+    cost_centers = {}
+    departments_by_cc: dict = {}
+    for row in rows:
+        cc = (row["cost_center"] or "").strip()
+        cc_key = (cc.lstrip("0") or "0") if cc else None
+        if cc_key:
+            cost_centers.setdefault(cc_key, cc)
+        dept = _dept_value(row)
+        if dept and dept not in departments_by_cc.setdefault(cc_key, []):
+            departments_by_cc[cc_key].append(dept)
+    return {
+        "location": _resolve_location([r["location"] for r in rows]),
+        "branch": rows[0]["branch"],
+        "line_count": len(rows),
+        "lines_missing_cost_center": sum(1 for r in rows if not (r["cost_center"] or "").strip()),
+        "cost_centers": sorted(cost_centers.values()),
+        # Department codes per cost center (keyed like `cost_centers`, leading zeros stripped; None = no cost center).
+        "departments_by_cc": departments_by_cc,
+    }
+
+
+def bill_line_allocation(entity: str, carrier: str, account_number: str, month: str) -> Optional[dict]:
+    """
+    The account's bill lines for `month`, or — when that month's sheet
+    hasn't been imported — the most recent month that has lines (cost
+    centers rarely change month to month, so its proportions are a sound
+    basis for splitting). Returns {"month", "same_month", "lines"} or None.
+    """
+    conn = _connect()
+    try:
+        conn.row_factory = sqlite3.Row
+        _ensure_schema(conn)
+        rows = conn.execute(
+            "SELECT b.*, m.dept_code, m.department FROM bill_lines b "
+            "LEFT JOIN master_accounts m ON m.id = b.master_id "
+            "WHERE b.entity = ? AND b.carrier = ? AND b.account_number = ?",
+            (entity, carrier, str(account_number)),
+        ).fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        return None
+    by_month: dict = {}
+    for row in rows:
+        by_month.setdefault(row["month"], []).append({**dict(row), "department_code": _dept_value(row)})
+    if month in by_month:
+        chosen = month
+    else:
+        def month_key(m):
+            try:
+                return datetime.strptime(m, "%B_%Y")
+            except ValueError:
+                return datetime.min
+        chosen = max(by_month, key=month_key)
+    return {"month": chosen, "same_month": chosen == month, "lines": by_month[chosen]}
+
+
+def list_bill_months() -> list:
+    """Months with imported bill lines and their line counts / totals."""
+    conn = _connect()
+    try:
+        _ensure_schema(conn)
+        return [
+            {"month": r[0], "lines": r[1], "total": r[2]}
+            for r in conn.execute("SELECT month, COUNT(*), ROUND(SUM(amount), 2) FROM bill_lines GROUP BY month ORDER BY month")
+        ]
+    finally:
+        conn.close()
+
+
+def list_master_locations() -> list:
+    """Distinct cities in the master data, for mapping each to an Oracle deliver-to location."""
+    conn = _connect()
+    try:
+        return [r[0] for r in conn.execute(
+            "SELECT DISTINCT location FROM master_accounts WHERE location IS NOT NULL AND location != '' ORDER BY location"
+        )]
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        conn.close()
+
+
 MASTER_ACCOUNT_FIELDS = [
     "entity", "carrier", "location", "cr", "branch", "department",
     "connection", "account_number", "service_number", "serial_number",
-    "status", "package", "notes", "cost_center",
+    "status", "package", "notes", "cost_center", "dept_code",
 ]
 
 

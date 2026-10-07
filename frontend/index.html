@@ -73,6 +73,14 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Master Data
         </button>
+        <button data-view="oracle" class="nav-item">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4v6h6M20 20v-6h-6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 10a8 8 0 00-14.3-4.3L4 10m16 4l-1.7 4.3A8 8 0 014 14" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Oracle Sync
+        </button>
+        <button data-view="responses" class="nav-item">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Oracle Responses
+        </button>
       </nav>
       <div class="px-5 py-4 border-t border-white/10 text-xs text-slate-600">Local automation · v1</div>
     </aside>
@@ -113,6 +121,9 @@
       <!-- Scrollable content -->
       <main class="flex-1 overflow-y-auto px-8 py-6">
 
+      <!-- Status banner: shared by every view -->
+      <div id="statusBanner" class="hidden rounded-xl px-4 py-3 text-sm border mb-6"></div>
+
       <div id="view-dashboard" class="view space-y-6">
 
         <!-- Navigation: Entity -> Carrier -> Account, three tiers -->
@@ -122,8 +133,6 @@
           <div id="accountTabs" class="hidden flex-wrap gap-2 pl-1"></div>
         </div>
 
-    <!-- Status banner -->
-    <div id="statusBanner" class="hidden rounded-xl px-4 py-3 text-sm border"></div>
 
     <!-- Filters: control every report/visualization below (cards, donut,
          Top Locations/Stores, carrier chart) as well as the accounts table
@@ -316,6 +325,10 @@
           class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
           <option value="">All Carriers</option>
         </select>
+        <select id="archiveLoginFilter" title="Which carrier login (Account 1, 2, 3…) the invoice was downloaded from"
+          class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">
+          <option value="">All Accounts</option>
+        </select>
         <select id="archiveMonthFilter"
           class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
           <option value="">All Months</option>
@@ -351,6 +364,14 @@
         <span id="archiveCount" class="text-sm text-gray-400"></span>
       </div>
 
+      <div id="archiveBulkBar" class="hidden sticky top-0 z-10 rounded-2xl border border-indigo-100 bg-indigo-50/95 backdrop-blur px-4 py-3 flex flex-wrap items-center gap-3">
+        <span class="text-sm font-semibold text-indigo-900"><span id="archiveSelectedCount">0</span> selected</span>
+        <span class="text-xs text-indigo-700/80">Created one at a time; invoices already in Oracle can't be selected.</span>
+        <div class="ml-auto flex gap-2">
+          <button id="archiveClearSelectionBtn" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">Clear</button>
+          <button id="archiveBulkCreateBtn" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed" style="background:linear-gradient(135deg,#4f46e5,#7c3aed)">Create selected in Oracle</button>
+        </div>
+      </div>
       <!-- Reports by Month: count of invoices per month, Paid vs Unpaid &
            Overdue, respecting every filter above (Entity/Carrier/Location/
            Store/Account/Status) — so switching Location or Store narrows
@@ -365,6 +386,7 @@
           <table class="w-full text-sm">
             <thead class="bg-gray-50/80 text-gray-500 text-left">
               <tr>
+                <th class="pl-4 pr-1 py-3 w-8"><input id="archiveSelectAll" type="checkbox" title="Select all shown" class="h-4 w-4 accent-indigo-600 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30" /></th>
                 <th class="px-4 py-3 font-medium">Entity</th>
                 <th class="px-4 py-3 font-medium">Carrier</th>
                 <th class="px-4 py-3 font-medium">Account Number</th>
@@ -372,6 +394,8 @@
                 <th class="px-4 py-3 font-medium">Store</th>
                 <th class="px-4 py-3 font-medium">Month</th>
                 <th class="px-4 py-3 font-medium">Status</th>
+                <th class="px-4 py-3 font-medium text-right">Amount</th>
+                <th class="px-4 py-3 font-medium">Oracle</th>
                 <th class="px-4 py-3 font-medium">File</th>
                 <th class="px-4 py-3 font-medium">Action</th>
               </tr>
@@ -397,11 +421,25 @@
     <section>
       <div class="flex items-center justify-between mb-3">
         <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide">Master Data — Location &amp; Branch Directory</h2>
+        <div class="flex items-center gap-2">
+        <input id="masterImportFile" type="file" accept=".xlsx,.xlsm" class="hidden" />
+        <input id="storeSheetImportFile" type="file" accept=".xlsx,.xlsm" class="hidden" />
+        <button id="masterImportBtn" title="Rebuild master data from the TELECOMMUNICATION MASTER workbook (manual edits are kept)"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shadow-sm">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 7V5a2 2 0 012-2h12a2 2 0 012 2v2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Import Master Excel
+        </button>
+        <button id="storeSheetImportBtn" title="Map an All-stores Bills sheet (CR / Store / Service / Acc / Cost center) onto master data"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shadow-sm">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 7V5a2 2 0 012-2h12a2 2 0 012 2v2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Import Store Sheet
+        </button>
         <button id="masterAddBtn"
           class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold text-white shadow-sm hover:brightness-110"
           style="background:linear-gradient(135deg,#4f46e5,#7c3aed)">
           <span>+</span> Add Row
         </button>
+        </div>
       </div>
       <div class="card bg-white border border-gray-100 rounded-t-2xl border-b-0 p-4 flex flex-wrap gap-3 items-center">
         <input id="masterSearchInput" type="text" placeholder="Search account, branch, service number…"
@@ -433,6 +471,7 @@
                 <th class="px-4 py-3 font-medium">Branch / Store</th>
                 <th class="px-4 py-3 font-medium">Cost Center</th>
                 <th class="px-4 py-3 font-medium">Department</th>
+                <th class="px-4 py-3 font-medium">Dept Code</th>
                 <th class="px-4 py-3 font-medium">Account Number</th>
                 <th class="px-4 py-3 font-medium">Status</th>
                 <th class="px-4 py-3 font-medium">Actions</th>
@@ -456,6 +495,377 @@
     </section>
 
       </div><!-- /view-master -->
+
+      <div id="view-oracle" class="view hidden space-y-6">
+
+    <!-- Oracle Sync: pushes archived invoices to Oracle Fusion Procurement as
+         Purchase Requisitions (backend/app/oracle_sync.py). Every setting and
+         ID mapping is editable here; nothing reaches Oracle while Live mode
+         is off - runs are previews only. -->
+    <div id="oracleStatusStrip" class="flex flex-wrap gap-2"></div>
+
+    <div class="flex flex-wrap gap-2 border-b border-gray-200">
+      <button data-otab="run" class="oracle-tab px-4 py-2 text-sm font-medium border-b-2 -mb-px">Run Sync</button>
+      <button data-otab="log" class="oracle-tab px-4 py-2 text-sm font-medium border-b-2 -mb-px">Sync Log</button>
+      <button data-otab="alerts" class="oracle-tab px-4 py-2 text-sm font-medium border-b-2 -mb-px">Alerts <span id="oracleAlertCount" class="hidden ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700"></span></button>
+      <button data-otab="settings" class="oracle-tab px-4 py-2 text-sm font-medium border-b-2 -mb-px">Settings</button>
+      <button data-otab="mappings" class="oracle-tab px-4 py-2 text-sm font-medium border-b-2 -mb-px">Mappings</button>
+    </div>
+
+    <section id="oracle-pane-run" class="oracle-pane space-y-4">
+      <div class="card bg-white border border-gray-100 rounded-2xl p-4 flex flex-wrap gap-3 items-center">
+        <select id="syncEntity" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"><option value="">All Entities</option></select>
+        <select id="syncCarrier" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"><option value="">All Carriers</option></select>
+        <select id="syncMonth" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"><option value="">All Months</option></select>
+        <select id="syncStatus" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="Unpaid">Unpaid &amp; Overdue</option>
+          <option value="Paid">Paid</option>
+          <option value="">Paid + Unpaid</option>
+        </select>
+        <input id="syncAccount" type="text" placeholder="Account number (optional)" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[200px]" />
+        <div class="ml-auto flex gap-2">
+          <button id="syncPreviewBtn" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">Preview (dry run)</button>
+          <button id="syncLiveBtn" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed" style="background:linear-gradient(135deg,#4f46e5,#7c3aed)">Send to Oracle</button>
+        </div>
+      </div>
+      <div id="syncSummary" class="hidden flex flex-wrap gap-2"></div>
+      <div id="syncBulkBar" class="hidden sticky top-0 z-10 rounded-2xl border border-indigo-100 bg-indigo-50/95 backdrop-blur px-4 py-3 flex flex-wrap items-center gap-3">
+        <span class="text-sm font-semibold text-indigo-900"><span id="syncSelectedCount">0</span> selected</span>
+        <span class="text-xs text-indigo-700/80">Only invoices whose preview succeeded can be selected.</span>
+        <div class="ml-auto flex gap-2">
+          <button id="syncClearSelectionBtn" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">Clear</button>
+          <button id="syncBulkCreateBtn" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed" style="background:linear-gradient(135deg,#4f46e5,#7c3aed)">Create selected in Oracle</button>
+        </div>
+      </div>
+
+        <div class="card bg-white border border-gray-100 rounded-2xl overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50/80 text-gray-500 text-left"><tr><th class="pl-4 pr-1 py-3 w-8"><input id="syncSelectAll" type="checkbox" title="Select all ready invoices" class="h-4 w-4 accent-indigo-600 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30" /></th><th class="px-4 py-3 font-medium">Entity</th><th class="px-4 py-3 font-medium">Carrier</th><th class="px-4 py-3 font-medium">Account</th><th class="px-4 py-3 font-medium">Month</th><th class="px-4 py-3 font-medium">Amount</th><th class="px-4 py-3 font-medium">Cost Center</th><th class="px-4 py-3 font-medium">Charge Account</th><th class="px-4 py-3 font-medium">Result</th><th class="px-4 py-3 font-medium">Requisition</th><th class="px-4 py-3 font-medium">Details</th></tr></thead>
+              <tbody id="syncResultsBody" class="divide-y divide-gray-50"></tbody>
+            </table>
+          </div>
+          <p id="syncResultsEmpty" class="text-center text-gray-400 py-10 text-sm">Run a preview to see exactly what would be sent to Oracle.</p>
+        </div>
+    </section>
+
+    <section id="oracle-pane-log" class="oracle-pane hidden space-y-4">
+      <div class="card bg-white border border-gray-100 rounded-2xl p-4 flex flex-wrap gap-3 items-center">
+        <select id="logEntity" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"><option value="">All Entities</option></select>
+        <select id="logStatus" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">All Statuses</option>
+          <option value="submitted">Submitted</option>
+          <option value="attached">Attached (not submitted)</option>
+          <option value="created">Created</option>
+          <option value="failed">Failed</option>
+          <option value="duplicate">Already in Oracle</option>
+        </select>
+        <button id="logRefreshBtn" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ml-auto">Reload</button>
+      </div>
+        <div class="card bg-white border border-gray-100 rounded-2xl overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50/80 text-gray-500 text-left"><tr><th class="px-4 py-3 font-medium">Entity</th><th class="px-4 py-3 font-medium">Carrier</th><th class="px-4 py-3 font-medium">Account</th><th class="px-4 py-3 font-medium">Month</th><th class="px-4 py-3 font-medium">Amount</th><th class="px-4 py-3 font-medium">Cost Center</th><th class="px-4 py-3 font-medium">Status</th><th class="px-4 py-3 font-medium">Requisition</th><th class="px-4 py-3 font-medium">Message</th><th class="px-4 py-3 font-medium">Updated</th><th class="px-4 py-3 font-medium">Actions</th></tr></thead>
+              <tbody id="syncLogBody" class="divide-y divide-gray-50"></tbody>
+            </table>
+          </div>
+          <p id="syncLogEmpty" class="hidden text-center text-gray-400 py-10 text-sm">Nothing has been sent to Oracle yet.</p>
+        </div>
+    </section>
+
+    <section id="oracle-pane-alerts" class="oracle-pane hidden space-y-4">
+      <div class="flex items-center justify-between gap-4">
+        <p class="text-sm text-gray-500">Suspense cost center routing and failures from live syncs. Also emailed to the Procurement Administrator when email is set up in Settings.</p>
+        <button id="alertsClearBtn" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed text-rose-600 border-rose-200 hover:bg-rose-50 shrink-0">Clear Alerts</button>
+      </div>
+        <div class="card bg-white border border-gray-100 rounded-2xl overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50/80 text-gray-500 text-left"><tr><th class="px-4 py-3 font-medium">When</th><th class="px-4 py-3 font-medium">Severity</th><th class="px-4 py-3 font-medium">Entity</th><th class="px-4 py-3 font-medium">Carrier</th><th class="px-4 py-3 font-medium">Account</th><th class="px-4 py-3 font-medium">Month</th><th class="px-4 py-3 font-medium">Message</th><th class="px-4 py-3 font-medium">Emailed</th></tr></thead>
+              <tbody id="alertsBody" class="divide-y divide-gray-50"></tbody>
+            </table>
+          </div>
+          <p id="alertsEmpty" class="hidden text-center text-gray-400 py-10 text-sm">No alerts.</p>
+        </div>
+    </section>
+
+    <section id="oracle-pane-settings" class="oracle-pane hidden space-y-4">
+      <div class="grid lg:grid-cols-2 gap-4">
+        <div class="card bg-white border border-gray-100 rounded-2xl p-5">
+          <h3 class="text-sm font-semibold text-gray-900">Oracle connection</h3>
+          <p class="text-xs text-gray-500 mt-0.5 mb-4">The Fusion pod and the integration user the requisitions are created as.</p>
+        <div class="grid grid-cols-2 gap-3">
+        <label class="text-xs text-gray-500 font-medium col-span-2">Base URL
+          <input id="osBaseUrl" type="text" placeholder="https://xxxx.fa.em2.oraclecloud.com" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">Username
+          <input id="osUsername" type="text" placeholder="integration.user@company.com" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">Password
+          <input id="osPassword" type="password" placeholder="" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">REST API version
+          <input id="osApiVersion" type="text" placeholder="11.13.18.05" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">Timeout (seconds)
+          <input id="osTimeout" type="number" placeholder="60" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        </div>
+        <div class="flex items-center gap-3 mt-4"><button id="osTestBtn" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">Test Connection</button><span id="osTestResult" class="text-sm"></span></div>
+        </div>
+        <div class="card bg-white border border-gray-100 rounded-2xl p-5">
+          <h3 class="text-sm font-semibold text-gray-900">Requisition defaults</h3>
+          <p class="text-xs text-gray-500 mt-0.5 mb-4">Values the payload template can use ({preparer_email}, {line_type}, ...).</p>
+        <div class="grid grid-cols-2 gap-3">
+        <label class="text-xs text-gray-500 font-medium ">Preparer email
+          <input id="osPreparerEmail" type="email" placeholder="preparer@company.com" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">Requester email (blank = preparer)
+          <input id="osRequesterEmail" type="email" placeholder="" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">Preparer ID (only if the template uses {preparer_id})
+          <input id="osPreparerId" type="text" placeholder="300000000000000" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">Requester ID (only if the template uses {requester_id})
+          <input id="osRequesterId" type="text" placeholder="" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">Line type
+          <input id="osLineType" type="text" placeholder="ORA_Rate Based Services" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">Item number
+          <input id="osItemNumber" type="text" placeholder="6287020245572" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">Quantity
+          <input id="osQuantity" type="number" step="any" min="0" placeholder="1" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">Category name
+          <input id="osCategory" type="text" placeholder="IT - Mobile &amp; Internet" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">Need-by days ({need_by_date} = invoice date + days)
+          <input id="osNeedByDays" type="number" min="0" placeholder="2" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">Currency
+          <input id="osCurrency" type="text" placeholder="SAR" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium">Attachment category
+          <select id="osAttachmentCategory" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full">
+            <option value="REQ_INTERNAL">Internal to Requisition (internal AP audit)</option>
+            <option value="TO_SUPPLIER">To Supplier (sent to the carrier)</option>
+            <option value="TO_BUYER">To Buyer</option>
+            <option value="TO_APPROVER">To Approver</option>
+            <option value="MISC">Miscellaneous</option>
+          </select>
+        </label>
+        </div>
+        </div>
+        <div class="card bg-white border border-gray-100 rounded-2xl p-5">
+          <h3 class="text-sm font-semibold text-gray-900">Behaviour</h3>
+          <p class="text-xs text-gray-500 mt-0.5 mb-4">Controls what a sync actually does.</p>
+        <div class="space-y-3">
+        <label class="flex items-start gap-2.5 p-3 rounded-xl border border-gray-100 bg-gray-50/60 cursor-pointer">
+          <input id="osLiveMode" type="checkbox" class="mt-0.5 h-4 w-4 accent-indigo-600" />
+          <span><span class="block text-sm font-medium text-gray-800">Live mode</span><span class="block text-xs text-gray-500 mt-0.5">When off, every sync is a preview and nothing is created in Oracle.</span></span>
+        </label>
+        <label class="flex items-start gap-2.5 p-3 rounded-xl border border-gray-100 bg-gray-50/60 cursor-pointer">
+          <input id="osAutoSubmit" type="checkbox" class="mt-0.5 h-4 w-4 accent-indigo-600" />
+          <span><span class="block text-sm font-medium text-gray-800">Submit for approval automatically</span><span class="block text-xs text-gray-500 mt-0.5">After creating the requisition and attaching the PDF, submit it to the approval workflow.</span></span>
+        </label>
+        <div class="grid grid-cols-2 gap-3">
+        <label class="text-xs text-gray-500 font-medium ">Monthly run: day of month (0 = off)
+          <input id="osScheduleDay" type="number" placeholder="0" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        </div>
+        <p class="text-xs text-gray-500">On or after this day each month, all Unpaid invoices not yet in Oracle are sent once. Only runs while Live mode is on.</p>
+        </div>
+        </div>
+        <div class="card bg-white border border-gray-100 rounded-2xl p-5">
+          <h3 class="text-sm font-semibold text-gray-900">Procurement Administrator alerts</h3>
+          <p class="text-xs text-gray-500 mt-0.5 mb-4">Optional email for suspense routing and failures. Alerts are always listed under the Alerts tab.</p>
+        <div class="grid grid-cols-2 gap-3">
+        <label class="text-xs text-gray-500 font-medium col-span-2">Administrator email
+          <input id="osAdminEmail" type="email" placeholder="procurement.admin@company.com" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">SMTP host
+          <input id="osSmtpHost" type="text" placeholder="smtp.office365.com" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">SMTP port
+          <input id="osSmtpPort" type="number" placeholder="587" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">SMTP username
+          <input id="osSmtpUsername" type="text" placeholder="" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">SMTP password
+          <input id="osSmtpPassword" type="password" placeholder="" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">From address
+          <input id="osSmtpFrom" type="text" placeholder="" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="flex items-center gap-2 text-sm text-gray-700 mt-5"><input id="osSmtpStarttls" type="checkbox" class="h-4 w-4 accent-indigo-600" /> Use STARTTLS</label>
+        </div>
+        </div>
+      </div>
+      <div class="flex justify-end"><button id="osSaveBtn" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed" style="background:linear-gradient(135deg,#4f46e5,#7c3aed)">Save Settings</button></div>
+    </section>
+
+    <section id="oracle-pane-mappings" class="oracle-pane hidden space-y-4">
+      <div id="mappingsUnsavedNote" class="hidden rounded-xl px-4 py-3 text-sm border bg-amber-50 border-amber-100 text-amber-800">
+        No mappings saved yet. The values below are placeholders. Replace them with the real names / IDs from your Oracle pod, then save.
+      </div>
+        <div class="card bg-white border border-gray-100 rounded-2xl p-5">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h3 class="text-sm font-semibold text-gray-900">Requisition payload template</h3>
+              <p class="text-xs text-gray-500 mt-0.5">The JSON sent to <code>/purchaseRequisitions</code>, one line + one distribution per invoice. Values are filled from the application:
+                <code>"{amount}"</code> replaces the whole value (numbers stay numbers), <code>"Account {account_number}"</code> fills in text,
+                and a leading <code>?</code> (<code>"?{deliver_to_location}"</code>) drops the field when there's no value. Remove any field you don't use.
+                Check the result with Run Sync → Preview.</p>
+            </div>
+            <button id="mapTplResetBtn" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed shrink-0">Reset to default</button>
+          </div>
+          <div class="grid lg:grid-cols-3 gap-3 mt-4">
+            <label class="text-xs text-gray-500 font-medium">Header
+              <textarea id="mapTplHeader" rows="14" spellcheck="false" class="map-tpl mt-1 font-mono text-xs bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full"></textarea>
+            </label>
+            <label class="text-xs text-gray-500 font-medium">Line
+              <textarea id="mapTplLine" rows="14" spellcheck="false" class="map-tpl mt-1 font-mono text-xs bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full"></textarea>
+            </label>
+            <label class="text-xs text-gray-500 font-medium">Distribution
+              <textarea id="mapTplDistribution" rows="14" spellcheck="false" class="map-tpl mt-1 font-mono text-xs bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full"></textarea>
+            </label>
+          </div>
+          <p class="text-xs text-gray-500 mt-4 mb-2">Available values — click to insert at the cursor:</p>
+          <div id="mapPlaceholderChips" class="space-y-2"></div>
+        </div>
+        <div class="card bg-white border border-gray-100 rounded-2xl p-5">
+          <h3 class="text-sm font-semibold text-gray-900">Per entity</h3>
+          <p class="text-xs text-gray-500 mt-0.5 mb-4">Oracle Business Unit ({bu_name} / {bu_id}), default deliver-to location, the suspense cost center for unmapped accounts, and the GL charge-account pattern (<code>{cost_center}</code> is replaced with the account&#39;s cost center and <code>{dept_code}</code> with its department code from Master Data, or the department name when the code is missing, e.g. <code>01-{cost_center}-540100-000-000</code>).</p>
+        <div class="overflow-x-auto"><table class="w-full text-sm">
+          <thead class="text-gray-500 text-left"><tr><th class="py-2 pr-3 font-medium">Entity</th><th class="py-2 pr-3 font-medium">Business Unit name</th><th class="py-2 pr-3 font-medium">BU ID (optional)</th><th class="py-2 pr-3 font-medium">Default deliver-to location</th><th class="py-2 pr-3 font-medium">Deliver-to location ID</th><th class="py-2 pr-3 font-medium">Destination org ID</th><th class="py-2 pr-3 font-medium">Suspense cost center</th><th class="py-2 pr-3 font-medium">Charge account pattern</th><th class="py-2 pr-3 font-medium">Chart of accounts ID</th></tr></thead>
+          <tbody id="mapEntityBody"></tbody>
+        </table></div>
+        <div class="grid grid-cols-4 mt-3 gap-3">
+        <label class="text-xs text-gray-500 font-medium ">Cost center width (zero-pad)
+          <input id="mapCcWidth" type="number" placeholder="4" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        </div>
+        </div>
+        <div class="card bg-white border border-gray-100 rounded-2xl p-5">
+          <h3 class="text-sm font-semibold text-gray-900">Suppliers</h3>
+          <p class="text-xs text-gray-500 mt-0.5 mb-4">The active Oracle supplier and payment site for each carrier, per entity ({supplier_name}, {supplier_site}, {supplier_id}, {supplier_site_id}).</p>
+        <div class="overflow-x-auto"><table class="w-full text-sm">
+          <thead class="text-gray-500 text-left"><tr><th class="py-2 pr-3 font-medium">Entity</th><th class="py-2 pr-3 font-medium">Carrier</th><th class="py-2 pr-3 font-medium">Supplier name</th><th class="py-2 pr-3 font-medium">Supplier site</th><th class="py-2 pr-3 font-medium">Supplier ID (optional)</th><th class="py-2 pr-3 font-medium">Site ID (optional)</th></tr></thead>
+          <tbody id="mapSupplierBody"></tbody>
+        </table></div>
+        </div>
+        <div class="card bg-white border border-gray-100 rounded-2xl p-5">
+          <h3 class="text-sm font-semibold text-gray-900">Deliver-to locations by city</h3>
+          <p class="text-xs text-gray-500 mt-0.5 mb-4">Oracle deliver-to location code ({deliver_to_location}) for accounts in a given master-data city. Cities not listed use the entity's default above.</p>
+        <div class="overflow-x-auto"><table class="w-full text-sm">
+          <thead class="text-gray-500 text-left"><tr><th class="py-2 pr-3 font-medium">Entity</th><th class="py-2 pr-3 font-medium">Master data location</th><th class="py-2 pr-3 font-medium">Oracle deliver-to location code</th><th class="py-2 pr-3 font-medium"></th></tr></thead>
+          <tbody id="mapDeliverBody"></tbody>
+        </table></div>
+        <button id="mapDeliverAddBtn" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed mt-3">+ Add location</button>
+        </div>
+        <div class="card bg-white border border-gray-100 rounded-2xl p-5">
+          <h3 class="text-sm font-semibold text-gray-900">Charge account overrides</h3>
+          <p class="text-xs text-gray-500 mt-0.5 mb-4">Explicit Oracle ChargeAccountId for specific cost centers. These take priority over the pattern lookup.</p>
+        <div class="overflow-x-auto"><table class="w-full text-sm">
+          <thead class="text-gray-500 text-left"><tr><th class="py-2 pr-3 font-medium">Entity</th><th class="py-2 pr-3 font-medium">Cost center</th><th class="py-2 pr-3 font-medium">ChargeAccountId</th><th></th></tr></thead>
+          <tbody id="mapChargeBody"></tbody>
+        </table></div>
+        <button id="mapChargeAddBtn" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed mt-3">+ Add override</button>
+        </div>
+        <details class="card bg-white border border-gray-100 rounded-2xl p-5">
+          <summary class="text-sm font-semibold text-gray-900 cursor-pointer">Advanced: GL account lookup</summary>
+          <p class="text-xs text-gray-500 mt-1 mb-4">How the charge-account pattern is looked up in Oracle. Only change these if your pod uses different field names.</p>
+        <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <label class="text-xs text-gray-500 font-medium ">Resource
+          <input id="mapGlResource" type="text" placeholder="accountCombinationsLOV" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">ID field
+          <input id="mapGlIdField" type="text" placeholder="_CODE_COMBINATION_ID" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">Segment field format
+          <input id="mapGlSegFormat" type="text" placeholder="_SEGMENT{n}" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">Pattern separator
+          <input id="mapGlSeparator" type="text" placeholder="-" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        <label class="text-xs text-gray-500 font-medium ">Chart of accounts field
+          <input id="mapGlCoaField" type="text" placeholder="_CHART_OF_ACCOUNTS_ID" class="mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full" />
+        </label>
+        </div>
+        </details>
+      <div class="flex justify-end"><button id="mapSaveBtn" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed" style="background:linear-gradient(135deg,#4f46e5,#7c3aed)">Save Mappings</button></div>
+    </section>
+
+      </div><!-- /view-oracle -->
+
+      <div id="view-responses" class="view hidden space-y-6">
+
+    <!-- Oracle Responses: every Oracle REST call made by live runs (bulk,
+         manual, scheduled), with the HTTP status and the response body,
+         grouped by run. Stored in data/oracle_sync.db. -->
+    <section class="space-y-3">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide">Runs</h2>
+        <button id="respReloadBtn" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">Reload</button>
+      </div>
+      <div class="card bg-white border border-gray-100 rounded-2xl overflow-hidden">
+        <div class="overflow-x-auto max-h-80">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50/80 text-gray-500 text-left sticky top-0"><tr>
+              <th class="px-4 py-3 font-medium">Started</th><th class="px-4 py-3 font-medium">Run</th><th class="px-4 py-3 font-medium">Type</th>
+              <th class="px-4 py-3 font-medium">Status</th><th class="px-4 py-3 font-medium text-right">Invoices</th>
+              <th class="px-4 py-3 font-medium text-right">Created</th><th class="px-4 py-3 font-medium text-right">Failed</th>
+              <th class="px-4 py-3 font-medium text-right">Skipped</th><th class="px-4 py-3 font-medium">Duration</th>
+            </tr></thead>
+            <tbody id="respBatchesBody" class="divide-y divide-gray-50"></tbody>
+          </table>
+        </div>
+        <p id="respBatchesEmpty" class="hidden text-center text-gray-400 py-8 text-sm">No live runs yet. Runs appear here once invoices are sent to Oracle.</p>
+      </div>
+    </section>
+
+    <section class="space-y-3">
+      <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide">Oracle responses</h2>
+      <div class="card bg-white border border-gray-100 rounded-2xl p-4 flex flex-wrap gap-3 items-center">
+        <select id="respBatchFilter" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"><option value="">All runs</option></select>
+        <select id="respOutcomeFilter" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">All outcomes</option><option value="ok">Succeeded</option><option value="error">Errors</option>
+        </select>
+        <select id="respStepFilter" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">All steps</option><option value="create">Create requisition</option><option value="attach">Attach PDF</option>
+          <option value="submit">Submit for approval</option><option value="duplicate_check">Duplicate check</option><option value="gl_lookup">GL account lookup</option>
+        </select>
+        <input id="respSearch" type="text" placeholder="Account, requisition # or error…" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 flex-1 min-w-[200px]" />
+        <button id="respExportBtn" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">Export CSV</button>
+        <span id="respCount" class="text-sm text-gray-400"></span>
+      </div>
+      <div class="card bg-white border border-gray-100 rounded-2xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50/80 text-gray-500 text-left"><tr>
+              <th class="px-4 py-3 font-medium">Time</th><th class="px-4 py-3 font-medium">Entity</th><th class="px-4 py-3 font-medium">Carrier</th>
+              <th class="px-4 py-3 font-medium">Account</th><th class="px-4 py-3 font-medium">Month</th><th class="px-4 py-3 font-medium">Step</th>
+              <th class="px-4 py-3 font-medium">HTTP</th><th class="px-4 py-3 font-medium">Requisition #</th><th class="px-4 py-3 font-medium">Header ID</th>
+              <th class="px-4 py-3 font-medium">Message</th><th class="px-4 py-3 font-medium text-right">Time (ms)</th><th class="px-4 py-3 font-medium"></th>
+            </tr></thead>
+            <tbody id="respBody" class="divide-y divide-gray-50"></tbody>
+          </table>
+        </div>
+        <p id="respEmpty" class="hidden text-center text-gray-400 py-10 text-sm">No Oracle responses match these filters.</p>
+        <div class="flex items-center justify-between gap-3 px-4 py-3 border-t border-gray-100 text-sm text-gray-500">
+          <span id="respPageInfo"></span>
+          <div class="flex items-center gap-3">
+            <button id="respPrevBtn" class="px-3 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40">Prev</button>
+            <button id="respNextBtn" class="px-3 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40">Next</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+      </div><!-- /view-responses -->
 
       </main>
     </div><!-- /main column -->
@@ -487,6 +897,9 @@
         <label class="text-xs text-gray-500 font-medium">Department
           <input id="masterFieldDepartment" type="text" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
         </label>
+        <label class="text-xs text-gray-500 font-medium">Dept Code
+          <input id="masterFieldDeptCode" type="text" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </label>
         <label class="text-xs text-gray-500 font-medium">Connection
           <input id="masterFieldConnection" type="text" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
         </label>
@@ -513,6 +926,43 @@
         <button id="masterModalCancel" class="flex-1 bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 rounded-xl py-2 text-sm font-medium">Cancel</button>
         <button id="masterModalSave" class="flex-1 rounded-xl py-2 text-sm font-semibold text-white" style="background:linear-gradient(135deg,#4f46e5,#7c3aed)">Save</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Bulk create progress: stays on screen on every page while a bulk run is going. -->
+  <div id="bulkPanel" class="hidden fixed bottom-5 right-5 z-40 w-[420px] max-w-[calc(100vw-2.5rem)] bg-white border border-gray-200 shadow-2xl rounded-2xl overflow-hidden">
+    <div class="px-4 pt-4 pb-3">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h3 id="bulkTitle" class="text-sm font-semibold text-gray-900">Creating requisitions in Oracle</h3>
+          <p id="bulkSubtitle" class="text-xs text-gray-500 mt-0.5"></p>
+        </div>
+        <button id="bulkCollapseBtn" class="text-gray-400 hover:text-gray-700 text-xs font-medium">Hide list</button>
+      </div>
+      <div class="mt-3 h-2 rounded-full bg-gray-100 overflow-hidden"><div id="bulkBar" class="h-full rounded-full transition-all duration-500" style="width:0%;background:linear-gradient(90deg,#4f46e5,#7c3aed)"></div></div>
+      <div class="mt-2 flex items-center justify-between text-xs">
+        <span id="bulkProgressText" class="font-semibold text-gray-700"></span>
+        <span id="bulkCounts" class="flex gap-1.5"></span>
+      </div>
+      <p id="bulkCurrent" class="mt-2 text-xs text-gray-600 truncate"></p>
+    </div>
+    <ul id="bulkItems" class="max-h-64 overflow-y-auto border-t border-gray-100 divide-y divide-gray-50 text-xs"></ul>
+    <div class="px-4 py-3 border-t border-gray-100 flex justify-end gap-2">
+      <button id="bulkStopBtn" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed text-rose-600 border-rose-200 hover:bg-rose-50">Stop after current</button>
+      <button id="bulkResponsesBtn" class="hidden inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">View responses</button>
+      <button id="bulkCloseBtn" class="hidden inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed" style="background:linear-gradient(135deg,#4f46e5,#7c3aed)">Close</button>
+    </div>
+  </div>
+
+  <!-- Generic dialog: payload viewer, amount entry, import results -->
+  <div id="infoModal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4 z-50">
+    <div id="infoModalPanel" class="bg-white border border-gray-100 shadow-2xl rounded-2xl p-6 w-full max-w-3xl max-h-[90vh] flex flex-col">
+      <div class="flex items-center justify-between mb-3">
+        <h2 id="infoModalTitle" class="text-lg font-semibold text-gray-900"></h2>
+        <button id="infoModalClose" class="text-gray-400 hover:text-gray-700 text-2xl leading-none">&times;</button>
+      </div>
+      <div id="infoModalBody" class="overflow-y-auto text-sm text-gray-700"></div>
+      <div id="infoModalFooter" class="flex justify-end gap-3 mt-4"></div>
     </div>
   </div>
 
@@ -598,6 +1048,7 @@
     let archiveInvoices = [];
     let archiveEntityFilter = '';
     let archiveCarrierFilter = '';
+    let archiveLoginFilter = ''; // '' = all logins, 'none' = unknown login, else slot number as string
     let archiveMonthFilter = '';
     let archiveAccountFilter = '';
     let archiveLocationFilter = '';
@@ -1240,7 +1691,7 @@
       const monthSelect = el('monthFilter');
       const prevMonth = monthSelect.value;
       monthSelect.innerHTML = '<option value="">All Months</option>' +
-        months.map((m) => `<option value="${m}">${m.replace('_', ' ')}</option>`).join('');
+        months.map((m) => `<option value="${m}">${m.replace(/_/g, ' ')}</option>`).join('');
       monthSelect.value = months.includes(prevMonth) ? prevMonth : '';
       monthFilterValue = monthSelect.value;
 
@@ -1274,8 +1725,43 @@
     function getArchiveScopedByEntityCarrier() {
       return archiveInvoices.filter((i) =>
         (!archiveEntityFilter || i.entity === archiveEntityFilter) &&
-        (!archiveCarrierFilter || i.provider === archiveCarrierFilter)
+        (!archiveCarrierFilter || i.provider === archiveCarrierFilter) &&
+        matchesArchiveLogin(i)
       );
+    }
+
+    function matchesArchiveLogin(inv) {
+      if (!archiveLoginFilter) return true;
+      if (archiveLoginFilter === 'none') return inv.account_slot == null;
+      return inv.account_slot === Number(archiveLoginFilter);
+    }
+
+    // Login slots (Account 1/2/3…) only mean something within one carrier,
+    // so the dropdown is enabled once a carrier is picked.
+    function populateArchiveLoginFilter() {
+      const select = el('archiveLoginFilter');
+      const prev = select.value;
+      if (!archiveCarrierFilter) {
+        select.innerHTML = '<option value="">All Accounts</option>';
+        select.disabled = true;
+        select.title = 'Pick a carrier first to filter by its login accounts';
+        archiveLoginFilter = '';
+        return;
+      }
+      const scoped = archiveInvoices.filter((i) =>
+        (!archiveEntityFilter || i.entity === archiveEntityFilter) && i.provider === archiveCarrierFilter
+      );
+      const configured = archiveEntityFilter ? slotsFor(archiveEntityFilter, archiveCarrierFilter).map((s) => s.slot) : [];
+      const slots = [...new Set([...configured, ...scoped.map((i) => i.account_slot).filter((s) => s != null)])].sort((a, b) => a - b);
+      const label = (slot) => archiveEntityFilter ? accountSlotLabel(archiveEntityFilter, archiveCarrierFilter, slot) : `Account ${slot}`;
+      const options = slots.map((slot) => ({ value: String(slot), text: label(slot) }));
+      if (scoped.some((i) => i.account_slot == null)) options.push({ value: 'none', text: 'Unknown account' });
+      select.innerHTML = `<option value="">All ${esc(archiveCarrierFilter)} Accounts</option>` +
+        options.map((o) => `<option value="${o.value}">${esc(o.text)}</option>`).join('');
+      select.disabled = false;
+      select.title = 'Which carrier login (Account 1, 2, 3…) the invoice was downloaded from';
+      select.value = options.some((o) => o.value === prev) ? prev : '';
+      archiveLoginFilter = select.value;
     }
 
     function populateArchiveEntityCarrierFilters() {
@@ -1301,7 +1787,7 @@
       const monthSelect = el('archiveMonthFilter');
       const prevMonth = monthSelect.value;
       monthSelect.innerHTML = '<option value="">All Months</option>' +
-        months.map((m) => `<option value="${m}">${m.replace('_', ' ')}</option>`).join('');
+        months.map((m) => `<option value="${m}">${m.replace(/_/g, ' ')}</option>`).join('');
       monthSelect.value = months.includes(prevMonth) ? prevMonth : '';
       archiveMonthFilter = monthSelect.value;
 
@@ -1334,6 +1820,7 @@
       const filtered = archiveInvoices.filter((inv) => {
         if (archiveEntityFilter && inv.entity !== archiveEntityFilter) return false;
         if (archiveCarrierFilter && inv.provider !== archiveCarrierFilter) return false;
+        if (!matchesArchiveLogin(inv)) return false;
         if (archiveMonthFilter && inv.month !== archiveMonthFilter) return false;
         if (archiveAccountFilter && inv.account_number !== archiveAccountFilter) return false;
         if (archiveLocationFilter && inv.location !== archiveLocationFilter) return false;
@@ -1370,7 +1857,7 @@
         const unpaidPct = (unpaid / maxTotal) * 100;
         return `
         <div class="flex items-center gap-3 text-xs">
-          <span class="w-28 shrink-0 text-gray-600 font-medium">${m.replace('_', ' ')}</span>
+          <span class="w-28 shrink-0 text-gray-600 font-medium">${m.replace(/_/g, ' ')}</span>
           <div class="flex-1 h-4 rounded-full bg-gray-100 overflow-hidden flex">
             <div style="width:${paidPct}%;background:#10b981" title="Paid: ${paid}"></div>
             <div style="width:${unpaidPct}%;background:#f59e0b" title="Unpaid & Overdue: ${unpaid}"></div>
@@ -1382,6 +1869,10 @@
 
     function renderArchive() {
       const filtered = getFilteredArchiveInvoices();
+      // Selections hidden by the current filters are dropped, so "Create
+      // selected in Oracle" only ever sends rows that are on screen.
+      const visibleKeys = new Set(filtered.map(invoiceKey));
+      for (const key of [...archiveSelected]) if (!visibleKeys.has(key)) archiveSelected.delete(key);
 
       renderMonthlyReport(filtered);
 
@@ -1391,23 +1882,30 @@
       el('archiveCount').textContent = `${filtered.length} invoice${filtered.length === 1 ? '' : 's'}`;
 
       for (const inv of filtered) {
+        const extra = archiveExtraCells(inv);
+        const key = invoiceKey(inv);
+        const selectable = isSelectableForOracle(invoiceStates[key]);
         const tr = document.createElement('tr');
         tr.className = 'hover:bg-gray-50/70 transition';
         tr.innerHTML = `
+          <td class="pl-4 pr-1 py-3"><input type="checkbox" class="archive-select h-4 w-4 accent-indigo-600 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30" data-key="${esc(key)}"
+            ${selectable ? '' : 'disabled title="Already in Oracle"'} ${selectable && archiveSelected.has(key) ? 'checked' : ''} /></td>
           <td class="px-4 py-3">${entityPill(inv.entity)}</td>
           <td class="px-4 py-3">${carrierPill(inv.provider)}</td>
-          <td class="px-4 py-3 font-medium text-gray-900">${inv.account_number}</td>
+          <td class="px-4 py-3 font-medium text-gray-900">${inv.account_number}${inv.account_slot != null ? `<span class="block text-xs text-gray-400 font-normal">${esc(accountSlotLabel(inv.entity, inv.provider, inv.account_slot))}</span>` : ''}</td>
           <td class="px-4 py-3">${locationPill(inv.location)}</td>
           <td class="px-4 py-3 text-gray-700">${inv.branch || '<span class="text-gray-300">—</span>'}</td>
-          <td class="px-4 py-3 text-gray-600">${inv.month.replace('_', ' ')}</td>
+          <td class="px-4 py-3 text-gray-600">${inv.month.replace(/_/g, ' ')}</td>
           <td class="px-4 py-3">${statusBadge(inv.status)}</td>
+          ${extra.amount}
+          ${extra.oracle}
           <td class="px-4 py-3 text-gray-400 text-xs">${inv.filename}</td>
-          <td class="px-4 py-3">
+          <td class="px-4 py-3 whitespace-nowrap">
             <button class="archive-download-btn text-indigo-600 hover:text-indigo-500 text-sm font-medium"
               data-entity="${inv.entity}" data-provider="${inv.provider}" data-account="${inv.account_number}" data-month="${inv.month}"
               data-status="${inv.status}" data-filename="${inv.filename}">
               Download
-            </button>
+            </button>${extra.actions}
           </td>`;
         body.appendChild(tr);
       }
@@ -1425,13 +1923,17 @@
           window.location.href = `${API}/api/invoices/file?${params.toString()}`;
         });
       });
+      bindArchiveOracleActions();
+      bindArchiveSelection(filtered);
     }
 
     async function loadArchive() {
       const res = await fetch(`${API}/api/invoices`);
       const data = await res.json();
       archiveInvoices = data.invoices || [];
+      await loadInvoiceStates();
       populateArchiveEntityCarrierFilters();
+      populateArchiveLoginFilter();
       populateArchiveMonthAccountFilters();
       renderArchive();
     }
@@ -1833,12 +2335,20 @@
 
     el('archiveEntityFilter').addEventListener('change', (e) => {
       archiveEntityFilter = e.target.value;
+      populateArchiveLoginFilter();
       populateArchiveMonthAccountFilters();
       renderArchive();
     });
 
     el('archiveCarrierFilter').addEventListener('change', (e) => {
       archiveCarrierFilter = e.target.value;
+      populateArchiveLoginFilter();
+      populateArchiveMonthAccountFilters();
+      renderArchive();
+    });
+
+    el('archiveLoginFilter').addEventListener('change', (e) => {
+      archiveLoginFilter = e.target.value;
       populateArchiveMonthAccountFilters();
       renderArchive();
     });
@@ -1869,11 +2379,15 @@
     });
 
     el('exportArchiveBtn').addEventListener('click', () => {
-      const rows = getFilteredArchiveInvoices();
+      const rows = getFilteredArchiveInvoices().map((inv) => ({
+        ...inv,
+        account_label: inv.account_slot != null ? accountSlotLabel(inv.entity, inv.provider, inv.account_slot) : '',
+      }));
       exportToCsv('invoice_archive.csv', rows, [
         { key: 'entity', label: 'Entity' },
         { key: 'provider', label: 'Carrier' },
         { key: 'account_number', label: 'Account Number' },
+        { key: 'account_label', label: 'Login Account' },
         { key: 'branch', label: 'Branch' },
         { key: 'location', label: 'Location' },
         { key: 'month', label: 'Month' },
@@ -1964,6 +2478,7 @@
           <td class="px-4 py-3 font-medium text-gray-900">${row.branch || ''}</td>
           <td class="px-4 py-3 text-gray-600">${row.cost_center || ''}</td>
           <td class="px-4 py-3 text-gray-600">${row.department || ''}</td>
+          <td class="px-4 py-3 text-gray-600">${row.dept_code || ''}</td>
           <td class="px-4 py-3 text-gray-600">${row.account_number || ''}</td>
           <td class="px-4 py-3 text-gray-600">${row.status || ''}</td>
           <td class="px-4 py-3 whitespace-nowrap">
@@ -1992,7 +2507,7 @@
     const MASTER_FIELD_IDS = {
       entity: 'masterFieldEntity', carrier: 'masterFieldCarrier', location: 'masterFieldLocation',
       cr: 'masterFieldCr', branch: 'masterFieldBranch', cost_center: 'masterFieldCostCenter',
-      department: 'masterFieldDepartment',
+      department: 'masterFieldDepartment', dept_code: 'masterFieldDeptCode',
       connection: 'masterFieldConnection', account_number: 'masterFieldAccountNumber',
       service_number: 'masterFieldServiceNumber', serial_number: 'masterFieldSerialNumber',
       status: 'masterFieldStatus', package: 'masterFieldPackage', notes: 'masterFieldNotes',
@@ -2105,6 +2620,7 @@
           { key: 'branch', label: 'Branch / Store' },
           { key: 'cost_center', label: 'Cost Center' },
           { key: 'department', label: 'Department' },
+          { key: 'dept_code', label: 'Dept Code' },
           { key: 'connection', label: 'Connection' },
           { key: 'account_number', label: 'Account Number' },
           { key: 'service_number', label: 'Service Number' },
@@ -2136,8 +2652,1479 @@
       }
     });
 
-    // ---- Sidebar navigation: switch between the three main views ----
-    const VIEW_TITLES = { dashboard: 'Dashboard', archive: 'Invoice Archive', master: 'Master Data' };
+    // ---- Shared helpers (Oracle Sync, imports, archive actions) ----
+
+    function esc(value) {
+      return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    async function apiJson(url, options) {
+      const res = await fetch(`${API}${url}`, options);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `Request failed (HTTP ${res.status}).`);
+      return data;
+    }
+
+    function jsonRequest(method, body) {
+      return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+    }
+
+    function invoiceKey(inv) {
+      return `${inv.entity}|${inv.provider}|${inv.account_number}|${inv.month}`;
+    }
+
+    const BTN_CLASS = 'inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shadow-sm';
+    const BTN_PRIMARY_STYLE = 'background:linear-gradient(135deg,#4f46e5,#7c3aed)';
+    const INPUT_CLASS = 'bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full';
+
+    // Generic dialog. buttons: [{ label, primary, onClick }] — a Close button is always added.
+    function openInfoModal(title, html, buttons = [], { wide = false } = {}) {
+      el('infoModalPanel').classList.toggle('max-w-3xl', !wide);
+      el('infoModalPanel').classList.toggle('max-w-6xl', wide);
+      el('infoModalTitle').textContent = title;
+      el('infoModalBody').innerHTML = html;
+      const footer = el('infoModalFooter');
+      footer.innerHTML = '';
+      for (const b of buttons) {
+        const btn = document.createElement('button');
+        btn.textContent = b.label;
+        if (b.primary) {
+          btn.className = 'px-4 py-2 rounded-xl text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-50';
+          btn.style.cssText = BTN_PRIMARY_STYLE;
+        } else {
+          btn.className = BTN_CLASS;
+        }
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          try { await b.onClick(); } finally { btn.disabled = false; }
+        });
+        footer.appendChild(btn);
+      }
+      const close = document.createElement('button');
+      close.textContent = 'Close';
+      close.className = BTN_CLASS;
+      close.addEventListener('click', closeInfoModal);
+      footer.appendChild(close);
+      el('infoModal').classList.remove('hidden');
+    }
+
+    function closeInfoModal() {
+      el('infoModal').classList.add('hidden');
+    }
+
+    el('infoModalClose').addEventListener('click', closeInfoModal);
+
+    function smallTable(columns, rows) {
+      if (!rows.length) return '<p class="text-gray-400 text-sm py-2">None.</p>';
+      const head = columns.map((c) => `<th class="px-3 py-2 font-medium">${esc(c.label)}</th>`).join('');
+      const body = rows.map((r) => `<tr>${columns.map((c) => `<td class="px-3 py-1.5">${esc(r[c.key])}</td>`).join('')}</tr>`).join('');
+      return `<div class="overflow-x-auto border border-gray-100 rounded-xl"><table class="w-full text-xs">
+        <thead class="bg-gray-50 text-gray-500 text-left"><tr>${head}</tr></thead>
+        <tbody class="divide-y divide-gray-50">${body}</tbody></table></div>`;
+    }
+
+    // ---- Master Data imports (spreadsheet uploads) ----
+
+    async function uploadExcel(url, file) {
+      const form = new FormData();
+      form.append('file', file);
+      return apiJson(url, { method: 'POST', body: form });
+    }
+
+    el('masterImportBtn').addEventListener('click', () => el('masterImportFile').click());
+    el('storeSheetImportBtn').addEventListener('click', () => el('storeSheetImportFile').click());
+
+    el('masterImportFile').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      if (!confirm(`Import "${file.name}" as the master workbook?\n\nRows imported from a previous master spreadsheet are replaced. Rows added or edited here are kept.`)) return;
+      showBanner(`Importing ${file.name}…`, 'info');
+      try {
+        const data = await uploadExcel('/api/master/import-upload', file);
+        const rows = Object.entries(data.summary || {}).map(([sheet, info]) => ({
+          sheet,
+          entity: info.entity || '',
+          carrier: info.carrier || '',
+          imported: info.skipped ? 'skipped' : info.rows_imported,
+          kept: info.rows_preserved || 0,
+          note: info.reason || '',
+        }));
+        hideBanner();
+        openInfoModal('Master workbook imported', smallTable([
+          { key: 'sheet', label: 'Sheet' }, { key: 'entity', label: 'Entity' }, { key: 'carrier', label: 'Carrier' },
+          { key: 'imported', label: 'Rows imported' }, { key: 'kept', label: 'Edited rows kept' }, { key: 'note', label: 'Note' },
+        ], rows));
+        await loadMasterData();
+      } catch (err) {
+        showBanner(err.message, 'error');
+      }
+    });
+
+    function recentMonthFolders(count = 6) {
+      const names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      const out = [];
+      const d = new Date();
+      for (let i = 0; i < count; i++) {
+        out.push(`${names[d.getMonth()]}_${d.getFullYear()}`);
+        d.setMonth(d.getMonth() - 1);
+      }
+      return out;
+    }
+
+    el('storeSheetImportFile').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      let imported = [];
+      try { imported = (await apiJson('/api/master/bill-months')).months || []; } catch (err) { imported = []; }
+      const archiveMonths = [...new Set(archiveInvoices.map((i) => i.month))];
+      const months = [...new Set([...archiveMonths, ...recentMonthFolders()])];
+      const monthDate = (m) => new Date(`${m.replace('_', ' 1, ')}`);
+      months.sort((a, b) => monthDate(b) - monthDate(a));
+      const latestArchive = archiveMonths.sort((a, b) => monthDate(b) - monthDate(a))[0];
+      const importedNote = imported.length
+        ? `<p class="text-xs text-gray-500 mt-3">Already imported: ${imported.map((m) => `${esc(m.month.replace(/_/g, ' '))} (${m.lines} lines, ${money(m.total)})`).join(' · ')}. Importing a month again replaces its lines.</p>`
+        : '';
+      openInfoModal('Import store sheet', `
+        <p class="mb-3"><b>${esc(file.name)}</b> updates the master data (account numbers, CR, cost centers) and, if you pick its bill month,
+          stores each line's <b>Amount</b> as that month's bill. Requisitions are then split by cost center using those amounts.</p>
+        <label class="text-xs text-gray-500 font-medium">Bill month of this sheet
+          <select id="storeSheetMonth" class="mt-1 ${INPUT_CLASS}">
+            ${months.map((m) => `<option value="${esc(m)}" ${m === latestArchive ? 'selected' : ''}>${esc(m.replace(/_/g, ' '))}</option>`).join('')}
+            <option value="">Don't record amounts (master data only)</option>
+          </select>
+        </label>${importedNote}`,
+        [{ label: 'Import', primary: true, onClick: () => runStoreSheetImport(file, el('storeSheetMonth').value) }]);
+    });
+
+    async function runStoreSheetImport(file, billMonth) {
+      closeInfoModal();
+      showBanner(`Mapping ${file.name} onto master data…`, 'info');
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        if (billMonth) form.append('bill_month', billMonth);
+        const r = await apiJson('/api/master/import-store-sheet-upload', { method: 'POST', body: form });
+        hideBanner();
+        const billChip = r.bill_month
+          ? `<span class="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 font-medium">${r.bill_lines_recorded} bill lines stored for ${esc(r.bill_month.replace(/_/g, ' '))}</span>`
+          : '';
+        const skippedHtml = r.bill_month ? `
+          <h4 class="font-semibold text-gray-900 mt-4 mb-1">Bill lines not stored <span class="font-normal text-gray-500">(account not in master data)</span></h4>
+          ${smallTable([
+            { key: 'row', label: 'Sheet row' }, { key: 'store', label: 'Store' }, { key: 'service_number', label: 'Service' },
+            { key: 'account_number', label: 'Acc' }, { key: 'amount', label: 'Amount' }, { key: 'reason', label: 'Reason' },
+          ], r.bill_lines_skipped || [])}` : '';
+        openInfoModal('Store sheet mapped', `
+          <div class="flex flex-wrap gap-2 mb-4">${billChip}
+            <span class="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 font-medium">${r.updated} rows updated</span>
+            <span class="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 font-medium">${r.account_numbers_filled} account numbers filled in</span>
+            <span class="px-3 py-1 rounded-full bg-amber-50 text-amber-700 font-medium">${r.unmatched_count} not matched</span>
+            <span class="px-3 py-1 rounded-full bg-rose-50 text-rose-700 font-medium">${r.conflicts_count} conflicts</span>
+          </div>
+          <h4 class="font-semibold text-gray-900 mb-1">Conflicts <span class="font-normal text-gray-500">(sheet's Acc disagrees with master; left unchanged)</span></h4>
+          ${smallTable([
+            { key: 'row', label: 'Sheet row' }, { key: 'store', label: 'Store' }, { key: 'service_number', label: 'Service' },
+            { key: 'account_number', label: 'Sheet Acc' }, { key: 'master_account_number', label: 'Master Acc' }, { key: 'master_branch', label: 'Master branch' },
+          ], r.conflicts || [])}
+          <h4 class="font-semibold text-gray-900 mt-4 mb-1">Not matched <span class="font-normal text-gray-500">(no master row for this line; add it under Master Data)</span></h4>
+          ${smallTable([
+            { key: 'row', label: 'Sheet row' }, { key: 'store', label: 'Store' }, { key: 'service_number', label: 'Service' }, { key: 'account_number', label: 'Acc' },
+          ], r.unmatched || [])}${skippedHtml}`);
+        await loadMasterData();
+      } catch (err) {
+        showBanner(err.message, 'error');
+      }
+    }
+
+    // ---- Invoice Archive: amount + Oracle status per invoice ----
+
+    let invoiceStates = {}; // invoiceKey -> { amount, oracle_status, requisition_number, message }
+
+    async function loadInvoiceStates() {
+      try {
+        const data = await apiJson('/api/oracle/invoice-states');
+        invoiceStates = {};
+        for (const row of data.rows || []) invoiceStates[invoiceKey(row)] = row;
+      } catch (e) {
+        invoiceStates = {};
+      }
+    }
+
+    const ORACLE_STATUS_THEME = {
+      submitted: ['Submitted', 'bg-emerald-50 text-emerald-700'],
+      attached: ['Attached', 'bg-indigo-50 text-indigo-700'],
+      created: ['Created', 'bg-indigo-50 text-indigo-700'],
+      failed: ['Failed', 'bg-rose-50 text-rose-700'],
+      duplicate: ['Already in Oracle', 'bg-gray-100 text-gray-600'],
+    };
+
+    function oracleBadge(status, requisitionNumber, message) {
+      if (!status) return '<span class="text-gray-300">Not sent</span>';
+      const [label, cls] = ORACLE_STATUS_THEME[status] || [status, 'bg-gray-100 text-gray-600'];
+      const req = requisitionNumber ? `<span class="block text-[11px] text-gray-500 mt-0.5">${esc(requisitionNumber)}</span>` : '';
+      return `<span title="${esc(message || '')}" class="inline-block px-2 py-0.5 rounded-full text-xs font-medium ${cls}">${esc(label)}</span>${req}`;
+    }
+
+    function archiveExtraCells(inv) {
+      const state = invoiceStates[invoiceKey(inv)] || {};
+      const amount = state.amount != null
+        ? `<span class="font-medium text-gray-900">${money(state.amount)}</span>`
+        : '<span class="text-gray-300">—</span>';
+      return {
+        amount: `<td class="px-4 py-3 text-right whitespace-nowrap">${amount}</td>`,
+        oracle: `<td class="px-4 py-3">${oracleBadge(state.oracle_status, state.requisition_number, state.message)}</td>`,
+        actions: `
+          <button class="archive-amount-btn text-gray-600 hover:text-gray-900 text-sm font-medium ml-3" data-key="${esc(invoiceKey(inv))}">Amount</button>
+          <button class="archive-oracle-btn text-indigo-600 hover:text-indigo-500 text-sm font-medium ml-3" data-key="${esc(invoiceKey(inv))}">Oracle</button>`,
+      };
+    }
+
+    function findArchiveInvoice(key) {
+      return archiveInvoices.find((inv) => invoiceKey(inv) === key);
+    }
+
+    function bindArchiveOracleActions() {
+      document.querySelectorAll('.archive-amount-btn').forEach((btn) => {
+        btn.addEventListener('click', () => openAmountDialog(findArchiveInvoice(btn.dataset.key)));
+      });
+      document.querySelectorAll('.archive-oracle-btn').forEach((btn) => {
+        btn.addEventListener('click', () => previewSingleInvoice(findArchiveInvoice(btn.dataset.key)));
+      });
+    }
+
+    function openAmountDialog(inv) {
+      if (!inv) return;
+      const current = (invoiceStates[invoiceKey(inv)] || {}).amount;
+      openInfoModal('Invoice amount', `
+        <p class="mb-3">${esc(inv.entity)} · ${esc(inv.provider)} · account <b>${esc(inv.account_number)}</b> · ${esc(inv.month.replace(/_/g, ' '))}</p>
+        <p class="text-xs text-gray-500 mb-2">The amount billed on the Oracle requisition. Filled automatically when a refresh scrapes this bill; set it here when it's missing or wrong.</p>
+        <input id="amountDialogInput" type="number" step="0.01" min="0" value="${current ?? ''}" class="${INPUT_CLASS}" placeholder="e.g. 1450.75" />`,
+        [{
+          label: 'Save', primary: true, onClick: async () => {
+            const amount = parseFloat(el('amountDialogInput').value);
+            if (Number.isNaN(amount)) { alert('Enter a number.'); return; }
+            try {
+              await apiJson('/api/oracle/invoice-amount', jsonRequest('PUT', { ...invoiceRefOf(inv), amount }));
+              closeInfoModal();
+              await loadInvoiceStates();
+              renderArchive();
+            } catch (err) { alert(err.message); }
+          },
+        }]);
+    }
+
+    // One requisition per carrier per month: acting on an invoice covers all of
+    // that carrier's invoices for the month (every account, same status) not in Oracle yet.
+    function requisitionRefOf(inv) {
+      return { entity: inv.entity, provider: inv.provider, account_number: null, month: inv.month, status: inv.status || null };
+    }
+
+    function resultForInvoice(data, inv) {
+      const results = data.results || [];
+      return results.find((r) => (r.invoices || []).some((i) => i.account_number === inv.account_number && i.month === inv.month)) || results[0];
+    }
+
+    function invoiceRefOf(row) {
+      return { entity: row.entity, provider: row.provider, account_number: row.account_number, month: row.month };
+    }
+
+    // ---- Oracle Sync view ----
+
+    let oracleStatus = null;
+    let oracleSettingsData = null;
+    let oracleMappings = null;
+    let lastSyncResults = [];
+    let activeOracleTab = 'run';
+
+    function chip(label, ok, title) {
+      const cls = ok === true ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+        : ok === false ? 'bg-amber-50 text-amber-800 border-amber-100'
+        : 'bg-gray-50 text-gray-600 border-gray-100';
+      const dot = ok === true ? '#10b981' : ok === false ? '#f59e0b' : '#9ca3af';
+      return `<span title="${esc(title || '')}" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${cls}">
+        <span style="width:7px;height:7px;border-radius:9999px;background:${dot}"></span>${esc(label)}</span>`;
+    }
+
+    async function loadOracleStatus() {
+      try {
+        oracleStatus = await apiJson('/api/oracle/status');
+      } catch (e) {
+        el('oracleStatusStrip').innerHTML = chip('Oracle sync unavailable: ' + e.message, false);
+        return;
+      }
+      const s = oracleStatus;
+      el('oracleStatusStrip').innerHTML = [
+        chip(s.live_mode ? 'Live mode ON' : 'Preview only (live mode off)', s.live_mode ? true : false, 'Settings → Behaviour'),
+        chip(s.connection_configured ? 'Connection set' : 'Connection not set', s.connection_configured, 'Settings → Oracle connection'),
+        chip(s.preparer_configured ? 'Preparer set' : 'Preparer missing', s.preparer_configured, 'Settings → Requisition defaults'),
+        chip(s.mappings_error ? 'Mappings not saved' : 'Mappings saved', !s.mappings_error, s.mappings_error || ''),
+        chip(s.auto_submit ? 'Auto-submit for approval' : 'Create only (no submit)', null),
+        chip(s.schedule_day_of_month > 0 ? `Monthly run on day ${s.schedule_day_of_month}` : 'Monthly run off', s.schedule_day_of_month > 0 ? true : null),
+        chip(s.alert_email_configured ? 'Alert email set' : 'Alert email off', s.alert_email_configured ? true : null),
+      ].join('');
+      const liveBtn = el('syncLiveBtn');
+      liveBtn.disabled = !s.live_mode;
+      liveBtn.title = s.live_mode ? '' : 'Turn on Live mode in Settings to send to Oracle.';
+    }
+
+    function switchOracleTab(tab) {
+      activeOracleTab = tab;
+      document.querySelectorAll('.oracle-pane').forEach((p) => p.classList.add('hidden'));
+      el(`oracle-pane-${tab}`).classList.remove('hidden');
+      document.querySelectorAll('.oracle-tab').forEach((b) => {
+        const active = b.dataset.otab === tab;
+        b.classList.toggle('border-indigo-600', active);
+        b.classList.toggle('text-indigo-700', active);
+        b.classList.toggle('border-transparent', !active);
+        b.classList.toggle('text-gray-500', !active);
+      });
+      if (tab === 'log') loadSyncLog();
+      if (tab === 'alerts') loadAlerts();
+      if (tab === 'settings') loadOracleSettingsForm();
+      if (tab === 'mappings') loadMappingsForm();
+    }
+
+    document.querySelectorAll('.oracle-tab').forEach((b) => b.addEventListener('click', () => switchOracleTab(b.dataset.otab)));
+
+    async function enterOracleView() {
+      populateSyncFilters();
+      await loadOracleStatus();
+      await loadAlertCount();
+      switchOracleTab(activeOracleTab);
+    }
+
+    function fillSelect(id, allLabel, values, labelFn = (v) => v) {
+      const select = el(id);
+      const prev = select.value;
+      select.innerHTML = `<option value="">${allLabel}</option>` + values.map((v) => `<option value="${esc(v)}">${esc(labelFn(v))}</option>`).join('');
+      if (values.includes(prev)) select.value = prev;
+    }
+
+    function populateSyncFilters() {
+      fillSelect('syncEntity', 'All Entities', ENTITIES);
+      fillSelect('syncCarrier', 'All Carriers', CARRIERS);
+      const months = [...new Set(archiveInvoices.map((i) => i.month))].sort().reverse();
+      fillSelect('syncMonth', 'All Months', months, (m) => m.replace(/_/g, ' '));
+      fillSelect('logEntity', 'All Entities', ENTITIES);
+    }
+
+    // -- Run Sync --
+
+    async function runSync(body, { live }) {
+      if (live) {
+        const submitNote = oracleStatus && oracleStatus.auto_submit ? ' and submit them for approval' : '';
+        if (!confirm(`Create purchase requisitions in Oracle${submitNote} for every matching invoice not already sent?\n\nThis cannot be undone from here.`)) return null;
+      }
+      return apiJson('/api/oracle/sync', jsonRequest('POST', { ...body, dry_run: !live }));
+    }
+
+    function currentSyncFilters() {
+      return {
+        entity: el('syncEntity').value || null,
+        provider: el('syncCarrier').value || null,
+        month: el('syncMonth').value || null,
+        status: el('syncStatus').value || null,
+        account_number: el('syncAccount').value.trim() || null,
+      };
+    }
+
+    // Errors that point at a Settings / Mappings field get a button that opens that tab.
+    function showSyncError(err) {
+      const target = /Oracle Sync → Mappings|Mappings ->/.test(err.message) ? 'mappings'
+        : /Oracle Sync → Settings|Settings ->/.test(err.message) ? 'settings' : null;
+      const action = target ? {
+        label: target === 'mappings' ? 'Open Mappings' : 'Open Settings',
+        onClick: () => { hideBanner(); activeOracleTab = target; switchView('oracle'); },
+      } : undefined;
+      showBanner(err.message, 'error', action);
+    }
+
+    async function runSyncFromPanel(live) {
+      const btn = live ? el('syncLiveBtn') : el('syncPreviewBtn');
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = live ? 'Sending…' : 'Building preview…';
+      try {
+        const data = await runSync(currentSyncFilters(), { live });
+        if (data) {
+          renderSyncResults(data);
+          if (live) await afterLiveSync();
+        }
+      } catch (err) {
+        showSyncError(err);
+      } finally {
+        btn.textContent = label;
+        btn.disabled = live ? !(oracleStatus && oracleStatus.live_mode) : false;
+      }
+    }
+
+    async function afterLiveSync() {
+      await Promise.all([loadInvoiceStates(), loadAlertCount()]);
+      renderArchive();
+    }
+
+    el('syncPreviewBtn').addEventListener('click', () => runSyncFromPanel(false));
+    el('syncLiveBtn').addEventListener('click', () => runSyncFromPanel(true));
+
+    const RESULT_THEME = {
+      preview: 'bg-indigo-50 text-indigo-700', submitted: 'bg-emerald-50 text-emerald-700', attached: 'bg-emerald-50 text-emerald-700',
+      skipped: 'bg-gray-100 text-gray-600', failed: 'bg-rose-50 text-rose-700',
+    };
+
+    function renderSyncResults(data) {
+      lastSyncResults = data.results || [];
+      const summary = el('syncSummary');
+      summary.classList.remove('hidden');
+      const counts = Object.entries(data.counts || {}).map(([k, v]) =>
+        `<span class="px-3 py-1 rounded-full text-xs font-semibold ${RESULT_THEME[k] || 'bg-gray-100 text-gray-600'}">${v} ${esc(k)}</span>`).join('');
+      const suspense = lastSyncResults.filter((r) => r.suspense_reason).length;
+      summary.innerHTML = `<span class="px-3 py-1 rounded-full text-xs font-semibold ${data.mode === 'live' ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-white'}">${data.mode === 'live' ? 'LIVE RUN' : 'PREVIEW — nothing sent'}</span>`
+        + counts
+        + (suspense ? `<span class="px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800">${suspense} to suspense cost center</span>` : '')
+        + (data.alert_email_error ? `<span class="px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700">Alert email failed: ${esc(data.alert_email_error)}</span>` : '');
+
+      const body = el('syncResultsBody');
+      body.innerHTML = '';
+      el('syncResultsEmpty').classList.toggle('hidden', lastSyncResults.length > 0);
+      if (!lastSyncResults.length) el('syncResultsEmpty').textContent = 'No archived invoices match these filters.';
+      lastSyncResults.forEach((r, i) => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50/70 transition';
+        const lineCount = (r.allocation || []).length;
+        const ccText = lineCount > 1 ? `${lineCount} cost centers` : (r.cost_center ?? '');
+        const cc = r.cost_center != null
+          ? `<span title="${esc(r.cost_center)}">${esc(ccText)}</span>${r.suspense_reason ? ' <span class="ml-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 text-[10px] font-semibold">SUSPENSE</span>' : ''}`
+          : '<span class="text-gray-300">—</span>';
+        const charge = lineCount > 1 ? '<span class="text-gray-400">per line (View)</span>'
+          : r.charge_account_id ? esc(r.charge_account_id)
+          : r.charge_account_segments ? `<span class="text-gray-400" title="Looked up in Oracle during a live run">${esc(r.charge_account_segments)}</span>` : '<span class="text-gray-300">—</span>';
+        const selectable = r.result === 'preview';
+        tr.innerHTML = `
+          <td class="pl-4 pr-1 py-3"><input type="checkbox" class="sync-select h-4 w-4 accent-indigo-600 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30" data-i="${i}"
+            ${selectable ? '' : 'disabled'} ${selectable && syncSelected.has(invoiceKey(r)) ? 'checked' : ''} /></td>
+          <td class="px-4 py-3">${entityPill(r.entity)}</td>
+          <td class="px-4 py-3">${carrierPill(r.provider)}</td>
+          <td class="px-4 py-3 font-medium text-gray-900">${esc(r.account_number)}</td>
+          <td class="px-4 py-3 text-gray-600">${esc(r.month.replace(/_/g, ' '))}</td>
+          <td class="px-4 py-3 text-right whitespace-nowrap">${r.amount != null ? money(r.amount) : '<span class="text-gray-300">—</span>'}</td>
+          <td class="px-4 py-3 whitespace-nowrap">${cc}</td>
+          <td class="px-4 py-3 text-xs">${charge}</td>
+          <td class="px-4 py-3"><span class="px-2 py-0.5 rounded-full text-xs font-medium ${RESULT_THEME[r.result] || ''}">${esc(r.result)}</span>
+            ${r.reason ? `<span class="block text-xs text-gray-500 mt-1 max-w-xs">${esc(r.reason)}</span>` : ''}</td>
+          <td class="px-4 py-3 text-gray-600">${esc(r.requisition_number || '')}</td>
+          <td class="px-4 py-3 whitespace-nowrap">
+            <button class="sync-detail-btn text-indigo-600 hover:text-indigo-500 text-sm font-medium" data-i="${i}">View</button>
+          </td>`;
+        body.appendChild(tr);
+      });
+      document.querySelectorAll('.sync-detail-btn').forEach((b) => b.addEventListener('click', () => showSyncDetail(lastSyncResults[Number(b.dataset.i)])));
+      bindSyncSelection();
+    }
+
+    // ---- Requisition detail: a readable view of what is sent to Oracle ----
+
+    const ORACLE_FIELD_LABELS = {
+      RequisitioningBU: 'Business Unit', RequisitioningBUId: 'Business Unit ID', PreparerEmail: 'Preparer', PreparerId: 'Preparer ID',
+      ExternallyManagedFlag: 'Externally managed', Description: 'Description', Justification: 'Justification',
+      LineNumber: 'Line', LineTypeCode: 'Line type', ItemDescription: 'Item description', CategoryName: 'Category',
+      Quantity: 'Quantity', UOM: 'Unit', Price: 'Price', Amount: 'Amount', CurrencyCode: 'Currency',
+      RequesterEmail: 'Requester', RequesterId: 'Requester ID', RequestedDeliveryDate: 'Delivery date',
+      DestinationType: 'Destination', DestinationTypeCode: 'Destination', DeliverToLocationCode: 'Deliver-to location',
+      Supplier: 'Supplier', SupplierSite: 'Supplier site', SupplierId: 'Supplier ID', SupplierSiteId: 'Supplier site ID',
+      DistributionNumber: 'Distribution', BudgetDate: 'Budget date', ChargeAccountId: 'Charge account ID', ChargeAccount: 'Charge account',
+      DestinationOrganizationId: 'Destination org ID', DeliverToLocationId: 'Deliver-to location ID',
+      DatatypeCode: 'Type', FileName: 'File name', Title: 'Title',
+    };
+    const MONEY_FIELDS = new Set(['Price', 'Amount']);
+
+    function oracleFieldLabel(key) {
+      const isDist = key.startsWith('dist:');
+      const field = isDist ? key.slice(5) : key;
+      const label = ORACLE_FIELD_LABELS[field] || field.replace(/([a-z])([A-Z])/g, '$1 $2');
+      return isDist && field === 'Quantity' ? 'Distribution quantity' : label;
+    }
+
+    function oracleValueHtml(key, value, currency) {
+      const field = key.startsWith('dist:') ? key.slice(5) : key;
+      if (value === true) return 'Yes';
+      if (value === false) return 'No';
+      if (value === null || value === undefined || value === '') return '<span class="text-gray-300">—</span>';
+      if (MONEY_FIELDS.has(field) && typeof value === 'number') {
+        return `<span class="font-semibold text-gray-900">${esc(currency || '')} ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`;
+      }
+      const lookedUp = typeof value === 'string' && value.match(/^<looked up in Oracle: (.*)>$/);
+      if (lookedUp) return `<span class="text-gray-500" title="Looked up in Oracle when sent">${esc(lookedUp[1])} <span class="text-[10px] uppercase tracking-wide text-indigo-500">lookup</span></span>`;
+      return esc(value);
+    }
+
+    function fieldGrid(entries, currency) {
+      return `<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2.5">${entries.map(([k, v]) => `
+        <div class="min-w-0"><div class="text-[11px] uppercase tracking-wide text-gray-400 font-medium">${esc(oracleFieldLabel(k))}</div>
+        <div class="text-sm text-gray-800 break-words">${oracleValueHtml(k, v, currency)}</div></div>`).join('')}</div>`;
+    }
+
+    function detailSection(title, subtitle, inner) {
+      return `<section class="mt-5">
+        <div class="flex items-baseline gap-2 mb-2"><h4 class="text-sm font-semibold text-gray-900">${esc(title)}</h4>
+        ${subtitle ? `<span class="text-xs text-gray-400">${subtitle}</span>` : ''}</div>
+        <div class="rounded-xl border border-gray-100 bg-gray-50/50 p-4">${inner}</div></section>`;
+    }
+
+    function linesHtml(r) {
+      const req = r.requisition;
+      const currency = (req.lines[0] || {}).CurrencyCode;
+      // Flatten each line + its (first) distribution into one row.
+      const rows = req.lines.map((line) => {
+        const row = {};
+        for (const [k, v] of Object.entries(line)) if (k !== 'distributions') row[k] = v;
+        for (const [k, v] of Object.entries((line.distributions || [])[0] || {})) row[`dist:${k}`] = v;
+        return row;
+      });
+      const keys = [...new Set(rows.flatMap((row) => Object.keys(row)))];
+      // Amounts always stay in the per-line table when the bill is split, even if equal.
+      const same = keys.filter((k) => !(rows.length > 1 && MONEY_FIELDS.has(k))
+        && rows.every((row) => JSON.stringify(row[k]) === JSON.stringify(rows[0][k])));
+      const varying = keys.filter((k) => !same.includes(k) && k !== 'LineNumber' && k !== 'dist:DistributionNumber');
+      const allocation = r.allocation || [];
+      const total = rows.reduce((sum, row) => sum + (Number(row.Price ?? row.Amount ?? 0) * Number(row.Quantity ?? 1)), 0);
+
+      const multiInvoice = (r.invoices || []).length > 1;
+      const tableHead = ['Line', ...(multiInvoice ? ['Account'] : []), 'Cost center', 'Stores', ...varying.map(oracleFieldLabel)]
+        .map((h) => `<th class="px-3 py-2 font-medium whitespace-nowrap">${esc(h)}</th>`).join('');
+      const tableRows = rows.map((row, i) => {
+        const a = allocation[i] || {};
+        const suspense = a.suspense_reason ? ` <span title="${esc(a.suspense_reason)}" class="ml-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 text-[10px] font-semibold">SUSPENSE</span>` : '';
+        return `<tr class="bg-white">
+          <td class="px-3 py-2 text-gray-500">${esc(row.LineNumber ?? i + 1)}</td>
+          ${multiInvoice ? `<td class="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">${esc(a.account_number || '')}</td>` : ''}
+          <td class="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">${esc(a.cost_center ?? '')}${suspense}</td>
+          <td class="px-3 py-2 text-gray-600 max-w-[220px]">${esc(a.stores || '')}</td>
+          ${varying.map((k) => `<td class="px-3 py-2 ${MONEY_FIELDS.has(k) ? 'text-right whitespace-nowrap' : ''}">${oracleValueHtml(k, row[k], currency)}</td>`).join('')}
+        </tr>`;
+      }).join('');
+      const table = `<div class="overflow-x-auto rounded-lg border border-gray-100"><table class="w-full text-xs">
+          <thead class="bg-gray-100/70 text-gray-500 text-left"><tr>${tableHead}</tr></thead>
+          <tbody class="divide-y divide-gray-100">${tableRows}</tbody>
+          <tfoot><tr class="bg-gray-50 font-semibold text-gray-900"><td class="px-3 py-2" colspan="${(multiInvoice ? 4 : 3) + varying.length}">
+            Total ${esc(currency || '')} ${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <span class="font-normal text-gray-500">across ${rows.length} line${rows.length === 1 ? '' : 's'}</span></td></tr></tfoot>
+        </table></div>`;
+      const sameEntries = same.filter((k) => k !== 'LineNumber' && k !== 'dist:DistributionNumber' || rows.length === 1).map((k) => [k, rows[0][k]]);
+      return (sameEntries.length ? `<p class="text-xs font-medium text-gray-500 mb-2">${rows.length > 1 ? 'Same on every line' : 'Line fields'}</p>${fieldGrid(sameEntries, currency)}` : '')
+        + (rows.length > 1 || varying.length ? `<p class="text-xs font-medium text-gray-500 mt-4 mb-2">${rows.length > 1 ? 'Per line' : 'Cost center'}</p>${table}` : `<div class="mt-4">${table}</div>`);
+    }
+
+    function attachmentHtml(r) {
+      const list = r.attachments || [r.attachment || {}];
+      return list.map((att, i) => singleAttachmentHtml(r, att, (r.invoices || [])[i])).join('<div class="h-3"></div>');
+    }
+
+    function singleAttachmentHtml(r, att, invRef) {
+      const inv = findArchiveInvoice(invoiceKey(invRef ? { ...r, account_number: invRef.account_number, month: invRef.month } : r));
+      const size = String(att.FileContents || '').match(/base64 of (\d+) bytes/);
+      const link = inv ? `${API}/api/invoices/file?${new URLSearchParams({ entity: inv.entity, provider: inv.provider, account_number: inv.account_number, month: inv.month, status: inv.status, filename: inv.filename })}` : null;
+      return `<div class="flex flex-wrap items-center gap-4">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-10 h-12 shrink-0 rounded-md bg-rose-50 text-rose-600 text-[10px] font-bold flex items-center justify-center border border-rose-100">PDF</div>
+          <div class="min-w-0"><div class="text-sm font-medium text-gray-900 truncate">${esc(att.FileName || '')}</div>
+            <div class="text-xs text-gray-500">${esc(att.Title || '')} · ${esc(att.CategoryName || '')}${size ? ` · ${(Number(size[1]) / 1024).toFixed(1)} KB` : ''}${invRef && (invRef.lines || []).length ? ` · attached to line ${invRef.lines.join(', ')}` : ''}</div></div>
+        </div>
+        ${link ? `<a href="${link}" target="_blank" class="ml-auto text-sm font-medium text-indigo-600 hover:text-indigo-500">Open PDF</a>` : ''}
+      </div>`;
+    }
+
+    function syncDetailHtml(r) {
+      const theme = RESULT_THEME[r.result] || 'bg-gray-100 text-gray-600';
+      const summary = `<div class="rounded-xl border border-gray-100 p-4 flex flex-wrap items-center gap-x-8 gap-y-3">
+          <div>${entityPill(r.entity)} ${carrierPill(r.provider)}</div>
+          <div><div class="text-[11px] uppercase tracking-wide text-gray-400 font-medium">${(r.invoice_count || 1) > 1 ? `Accounts (${r.invoice_count} invoices)` : 'Account'}</div><div class="font-semibold text-gray-900 max-w-md">${esc(r.account_number)}</div></div>
+          <div><div class="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Bill month</div><div class="text-gray-900">${esc(r.month.replace(/_/g, ' '))}</div></div>
+          <div><div class="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Amount</div><div class="font-semibold text-gray-900">${r.amount != null ? money(r.amount) : '—'}</div></div>
+          <div><div class="text-[11px] uppercase tracking-wide text-gray-400 font-medium">Location</div><div class="text-gray-900">${esc(r.location || '—')}</div></div>
+          <div class="ml-auto"><span class="px-2.5 py-1 rounded-full text-xs font-semibold ${theme}">${esc(r.result === 'preview' ? 'Preview: not sent yet' : r.result)}</span>
+            ${r.requisition_number ? `<div class="text-xs text-gray-500 mt-1 text-right">${esc(r.requisition_number)}</div>` : ''}</div>
+        </div>`;
+      const notes = [
+        r.reason ? `<div class="rounded-lg px-3 py-2 text-sm bg-rose-50 text-rose-700 border border-rose-100">${esc(r.reason)}</div>` : '',
+        (r.invoices || []).length > 1 ? `<div class="rounded-lg px-3 py-2 text-sm bg-indigo-50 text-indigo-700 border border-indigo-100">One requisition for all ${r.invoices.length} ${esc(r.provider)} invoices of ${esc(r.month.replace(/_/g, ' '))}, one line each: ${r.invoices.map((i) => `${esc(i.account_number)}${i.amount != null ? ` (${money(i.amount)})` : ''}`).join(', ')}</div>` : '',
+        r.allocation_note ? `<div class="rounded-lg px-3 py-2 text-sm bg-indigo-50 text-indigo-700 border border-indigo-100">${esc(r.allocation_note)}</div>` : '',
+        r.suspense_reason ? `<div class="rounded-lg px-3 py-2 text-sm bg-amber-50 text-amber-800 border border-amber-100">Suspense cost center: ${esc(r.suspense_reason)}</div>` : '',
+      ].filter(Boolean).join('');
+      if (!r.requisition) return summary + (notes ? `<div class="space-y-2 mt-3">${notes}</div>` : '');
+
+      const req = r.requisition;
+      const currency = (req.lines[0] || {}).CurrencyCode;
+      const header = Object.entries(req).filter(([k]) => k !== 'lines');
+      const payloadJson = JSON.stringify(req, null, 2);
+      const attachmentJson = JSON.stringify(r.attachments || r.attachment, null, 2);
+      return summary
+        + (notes ? `<div class="space-y-2 mt-3">${notes}</div>` : '')
+        + detailSection('Requisition header', 'sent once', fieldGrid(header, currency))
+        + detailSection('Requisition lines', `${req.lines.length} line${req.lines.length === 1 ? '' : 's'}, one per cost center`, linesHtml(r))
+        + detailSection((r.attachments || []).length > 1 ? `Attachments (${r.attachments.length})` : 'Attachment', 'each PDF is uploaded to its own invoice line after the requisition is created', attachmentHtml(r))
+        + `<div class="mt-5 border-t border-gray-100 pt-4">
+            <div class="flex items-center gap-3">
+              <button type="button" id="payloadToggleBtn" class="${BTN_CLASS}">Show payload (JSON)</button>
+              <button type="button" id="payloadCopyBtn" class="hidden text-sm font-medium text-indigo-600 hover:text-indigo-500">Copy requisition JSON</button>
+            </div>
+            <div id="payloadBlock" class="hidden mt-3 space-y-3">
+              <div><p class="text-xs font-medium text-gray-500 mb-1">POST /purchaseRequisitions</p>
+                <pre id="payloadRequisitionJson" class="bg-slate-900 text-slate-100 rounded-xl p-3 text-xs overflow-x-auto max-h-96">${esc(payloadJson)}</pre></div>
+              <div><p class="text-xs font-medium text-gray-500 mb-1">POST /purchaseRequisitions/{id}/child/attachments</p>
+                <pre class="bg-slate-900 text-slate-100 rounded-xl p-3 text-xs overflow-x-auto">${esc(attachmentJson)}</pre></div>
+            </div>
+          </div>`;
+    }
+
+    function bindPayloadToggle() {
+      const toggle = el('payloadToggleBtn');
+      if (!toggle) return;
+      toggle.addEventListener('click', () => {
+        const hidden = el('payloadBlock').classList.toggle('hidden');
+        el('payloadCopyBtn').classList.toggle('hidden', hidden);
+        toggle.textContent = hidden ? 'Show payload (JSON)' : 'Hide payload';
+      });
+      el('payloadCopyBtn').addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(el('payloadRequisitionJson').textContent);
+          el('payloadCopyBtn').textContent = 'Copied';
+        } catch (e) {
+          el('payloadCopyBtn').textContent = 'Copy failed — select the text instead';
+        }
+        setTimeout(() => { el('payloadCopyBtn').textContent = 'Copy requisition JSON'; }, 2000);
+      });
+    }
+
+    function showSyncDetail(r) {
+      const buttons = [];
+      const firstRef = (r.invoices || [])[0] || {};
+      const inv = findArchiveInvoice(invoiceKey(r)) || findArchiveInvoice(invoiceKey({ ...r, account_number: firstRef.account_number, month: firstRef.month }));
+      if (inv && (r.result === 'preview' || r.result === 'failed') && r.reason && /Invoice amount/.test(r.reason)) {
+        buttons.push({ label: 'Set amount', onClick: () => openAmountDialog(inv) });
+      }
+      if (inv && r.result === 'preview' && oracleStatus && oracleStatus.live_mode) {
+        buttons.push({ label: (r.invoice_count || 1) > 1 ? `Send requisition (${r.invoice_count} invoices)` : 'Send this invoice', primary: true, onClick: () => sendSingleInvoice(inv) });
+      }
+      openInfoModal('What will be sent to Oracle', syncDetailHtml(r), buttons, { wide: true });
+      bindPayloadToggle();
+    }
+
+    async function previewSingleInvoice(inv) {
+      if (!inv) return;
+      if (!oracleStatus) await loadOracleStatus();
+      try {
+        const data = await runSync(requisitionRefOf(inv), { live: false });
+        const r = resultForInvoice(data, inv);
+        if (!r) { showBanner('That invoice was not found in the archive.', 'error'); return; }
+        showSyncDetail(r);
+      } catch (err) {
+        showSyncError(err);
+      }
+    }
+
+    async function sendSingleInvoice(inv) {
+      try {
+        const data = await runSync(requisitionRefOf(inv), { live: true });
+        if (!data) return;
+        const r = resultForInvoice(data, inv);
+        closeInfoModal();
+        await afterLiveSync();
+        if (r) {
+          const ok = r.result === 'submitted' || r.result === 'attached';
+          showBanner(`${r.account_number} ${r.month.replace(/_/g, ' ')}: ${r.result}${r.requisition_number ? ` (${r.requisition_number})` : ''}${r.reason ? ` — ${r.reason}` : ''}`, ok ? 'success' : 'error');
+        }
+        if (activeOracleTab === 'log') loadSyncLog();
+      } catch (err) {
+        showSyncError(err);
+      }
+    }
+
+    // -- Sync Log --
+
+    async function loadSyncLog() {
+      const params = new URLSearchParams();
+      if (el('logEntity').value) params.set('entity', el('logEntity').value);
+      if (el('logStatus').value) params.set('status', el('logStatus').value);
+      let rows = [];
+      try {
+        rows = (await apiJson(`/api/oracle/sync-log?${params.toString()}`)).rows || [];
+      } catch (err) {
+        showBanner(err.message, 'error');
+      }
+      const body = el('syncLogBody');
+      body.innerHTML = '';
+      el('syncLogEmpty').classList.toggle('hidden', rows.length > 0);
+      rows.forEach((r, i) => {
+        const canRetry = r.status !== 'submitted' && r.status !== 'duplicate';
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50/70 transition';
+        tr.innerHTML = `
+          <td class="px-4 py-3">${entityPill(r.entity)}</td>
+          <td class="px-4 py-3">${carrierPill(r.provider)}</td>
+          <td class="px-4 py-3 font-medium text-gray-900">${esc(r.account_number)}</td>
+          <td class="px-4 py-3 text-gray-600">${esc(r.month.replace(/_/g, ' '))}</td>
+          <td class="px-4 py-3 text-right whitespace-nowrap">${r.amount != null ? money(r.amount) : ''}</td>
+          <td class="px-4 py-3">${esc(r.cost_center || '')}${r.used_suspense ? ' <span class="ml-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 text-[10px] font-semibold">SUSPENSE</span>' : ''}</td>
+          <td class="px-4 py-3">${oracleBadge(r.status)}</td>
+          <td class="px-4 py-3 text-gray-600">${esc(r.requisition_number || '')}</td>
+          <td class="px-4 py-3 text-xs text-gray-500 max-w-sm">${esc(r.message || '')}</td>
+          <td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">${esc((r.updated_at || '').replace('T', ' '))}</td>
+          <td class="px-4 py-3 whitespace-nowrap">
+            ${canRetry ? `<button class="log-retry-btn text-indigo-600 hover:text-indigo-500 text-sm font-medium mr-3" data-i="${i}">Retry</button>` : ''}
+            <button class="log-reset-btn text-rose-600 hover:text-rose-500 text-sm font-medium" data-i="${i}">Reset</button>
+          </td>`;
+        body.appendChild(tr);
+      });
+      document.querySelectorAll('.log-retry-btn').forEach((b) => b.addEventListener('click', async () => {
+        const r = rows[Number(b.dataset.i)];
+        const inv = findArchiveInvoice(invoiceKey(r));
+        if (!inv) { showBanner('The PDF for this invoice is no longer in the archive.', 'error'); return; }
+        await sendSingleInvoice(inv);
+        await loadSyncLog();
+      }));
+      document.querySelectorAll('.log-reset-btn').forEach((b) => b.addEventListener('click', async () => {
+        const r = rows[Number(b.dataset.i)];
+        if (!confirm(`Forget the sync record for ${r.account_number} ${r.month.replace(/_/g, ' ')}?\n\nThe next sync will treat it as new. It is still skipped if Oracle already has a matching requisition. Nothing is changed in Oracle.`)) return;
+        try {
+          await apiJson('/api/oracle/sync-log/reset', jsonRequest('POST', invoiceRefOf(r)));
+          await loadSyncLog();
+          await loadInvoiceStates();
+          renderArchive();
+        } catch (err) { showBanner(err.message, 'error'); }
+      }));
+    }
+
+    el('logEntity').addEventListener('change', loadSyncLog);
+    el('logStatus').addEventListener('change', loadSyncLog);
+    el('logRefreshBtn').addEventListener('click', loadSyncLog);
+
+    // -- Alerts --
+
+    async function loadAlertCount() {
+      try {
+        const alerts = (await apiJson('/api/oracle/alerts?limit=500')).alerts || [];
+        const badge = el('oracleAlertCount');
+        badge.textContent = alerts.length;
+        badge.classList.toggle('hidden', alerts.length === 0);
+        return alerts;
+      } catch (e) {
+        return [];
+      }
+    }
+
+    async function loadAlerts() {
+      const alerts = await loadAlertCount();
+      const body = el('alertsBody');
+      body.innerHTML = '';
+      el('alertsEmpty').classList.toggle('hidden', alerts.length > 0);
+      for (const a of alerts) {
+        const tr = document.createElement('tr');
+        const sev = a.severity === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-800';
+        tr.innerHTML = `
+          <td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">${esc((a.created_at || '').replace('T', ' '))}</td>
+          <td class="px-4 py-3"><span class="px-2 py-0.5 rounded-full text-xs font-medium ${sev}">${esc(a.severity)}</span></td>
+          <td class="px-4 py-3">${entityPill(a.entity)}</td>
+          <td class="px-4 py-3">${carrierPill(a.provider)}</td>
+          <td class="px-4 py-3 font-medium text-gray-900">${esc(a.account_number)}</td>
+          <td class="px-4 py-3 text-gray-600">${esc((a.month || '').replace(/_/g, ' '))}</td>
+          <td class="px-4 py-3 text-gray-700 max-w-md">${esc(a.message)}</td>
+          <td class="px-4 py-3 text-gray-500">${a.emailed ? 'Yes' : 'No'}</td>`;
+        body.appendChild(tr);
+      }
+    }
+
+    el('alertsClearBtn').addEventListener('click', async () => {
+      if (!confirm('Clear all alerts? The sync log is not affected.')) return;
+      try {
+        await apiJson('/api/oracle/alerts', { method: 'DELETE' });
+        await loadAlerts();
+      } catch (err) { showBanner(err.message, 'error'); }
+    });
+
+    // -- Settings --
+
+    const ORACLE_SETTING_FIELDS = {
+      base_url: 'osBaseUrl', username: 'osUsername', api_version: 'osApiVersion', timeout_seconds: 'osTimeout',
+      preparer_email: 'osPreparerEmail', requester_email: 'osRequesterEmail',
+      preparer_id: 'osPreparerId', requester_id: 'osRequesterId', line_type: 'osLineType', category_name: 'osCategory',
+      currency_code: 'osCurrency', attachment_category: 'osAttachmentCategory', item_number: 'osItemNumber', quantity: 'osQuantity', need_by_days: 'osNeedByDays', schedule_day_of_month: 'osScheduleDay',
+      admin_email: 'osAdminEmail', smtp_host: 'osSmtpHost', smtp_port: 'osSmtpPort', smtp_username: 'osSmtpUsername', smtp_from: 'osSmtpFrom',
+    };
+    const ORACLE_SETTING_CHECKBOXES = { live_mode: 'osLiveMode', auto_submit: 'osAutoSubmit', smtp_starttls: 'osSmtpStarttls' };
+    const ORACLE_SETTING_NUMBERS = new Set(['timeout_seconds', 'schedule_day_of_month', 'smtp_port', 'quantity', 'need_by_days']);
+
+    async function loadOracleSettingsForm() {
+      try {
+        oracleSettingsData = await apiJson('/api/oracle/settings');
+      } catch (err) { showBanner(err.message, 'error'); return; }
+      const s = oracleSettingsData;
+      for (const [key, id] of Object.entries(ORACLE_SETTING_FIELDS)) el(id).value = s[key] ?? '';
+      for (const [key, id] of Object.entries(ORACLE_SETTING_CHECKBOXES)) el(id).checked = !!s[key];
+      el('osPassword').value = '';
+      el('osPassword').placeholder = s.password_set ? '•••••••• saved (leave blank to keep)' : 'Not set';
+      el('osSmtpPassword').value = '';
+      el('osSmtpPassword').placeholder = s.smtp_password_set ? '•••••••• saved (leave blank to keep)' : 'Not set';
+      el('osTestResult').textContent = '';
+    }
+
+    async function saveOracleSettingsForm() {
+      const body = {};
+      for (const [key, id] of Object.entries(ORACLE_SETTING_FIELDS)) {
+        const v = el(id).value.trim();
+        body[key] = ORACLE_SETTING_NUMBERS.has(key) ? (v === '' ? (key === 'quantity' ? 1 : 0) : Number(v)) : v;
+      }
+      for (const [key, id] of Object.entries(ORACLE_SETTING_CHECKBOXES)) body[key] = el(id).checked;
+      if (el('osPassword').value) body.password = el('osPassword').value;
+      if (el('osSmtpPassword').value) body.smtp_password = el('osSmtpPassword').value;
+      if (body.live_mode && !(oracleSettingsData && oracleSettingsData.live_mode)) {
+        if (!confirm('Turn on Live mode?\n\nSyncs will then create real purchase requisitions in Oracle (and the monthly run, if set, will send automatically).')) return false;
+      }
+      oracleSettingsData = await apiJson('/api/oracle/settings', jsonRequest('PUT', body));
+      await loadOracleSettingsForm();
+      await loadOracleStatus();
+      return true;
+    }
+
+    el('osSaveBtn').addEventListener('click', async () => {
+      try {
+        if (await saveOracleSettingsForm()) showBanner('Oracle settings saved.', 'success');
+      } catch (err) { showBanner(err.message, 'error'); }
+    });
+
+    el('osTestBtn').addEventListener('click', async () => {
+      const out = el('osTestResult');
+      out.className = 'text-sm text-gray-500';
+      out.textContent = 'Saving and testing…';
+      try {
+        if (!(await saveOracleSettingsForm())) { out.textContent = ''; return; }
+        el('osTestResult').className = 'text-sm text-gray-500';
+        el('osTestResult').textContent = 'Testing…';
+        const r = await apiJson('/api/oracle/test-connection', { method: 'POST' });
+        el('osTestResult').className = `text-sm ${r.ok ? 'text-emerald-700' : 'text-rose-700'}`;
+        el('osTestResult').textContent = r.message;
+      } catch (err) {
+        el('osTestResult').className = 'text-sm text-rose-700';
+        el('osTestResult').textContent = err.message;
+      }
+    });
+
+    // -- Mappings --
+
+    let mappingsLocations = [];
+    let defaultPayloadTemplate = null;
+    let lastFocusedTemplate = null;
+
+    function mapInput(attrs, value, placeholder = '') {
+      const data = Object.entries(attrs).map(([k, v]) => `data-${k}="${esc(v)}"`).join(' ');
+      return `<input ${data} value="${esc(value ?? '')}" placeholder="${esc(placeholder)}" class="map-input ${INPUT_CLASS}" />`;
+    }
+
+    function entityOptions(selected) {
+      return ENTITIES.map((e) => `<option value="${esc(e)}" ${e === selected ? 'selected' : ''}>${esc(e)}</option>`).join('');
+    }
+
+    function chargeRowHtml(entity = ENTITIES[0], costCenter = '', accountId = '') {
+      return `<tr class="charge-row">
+        <td class="py-1.5 pr-3"><select class="charge-entity ${INPUT_CLASS}">${entityOptions(entity)}</select></td>
+        <td class="py-1.5 pr-3"><input class="charge-cc ${INPUT_CLASS}" value="${esc(costCenter)}" placeholder="0112" /></td>
+        <td class="py-1.5 pr-3"><input class="charge-id ${INPUT_CLASS}" value="${esc(accountId)}" placeholder="300000000000000" /></td>
+        <td class="py-1.5"><button class="row-remove text-rose-600 hover:text-rose-500 text-sm font-medium">Remove</button></td>
+      </tr>`;
+    }
+
+    function deliverRowHtml(entity = ENTITIES[0], location = '', code = '') {
+      const locations = mappingsLocations.includes(location) || !location ? mappingsLocations : [location, ...mappingsLocations];
+      const options = locations.map((l) => `<option value="${esc(l)}" ${l === location ? 'selected' : ''}>${esc(l)}</option>`).join('');
+      return `<tr class="deliver-row">
+        <td class="py-1.5 pr-3"><select class="deliver-entity ${INPUT_CLASS}">${entityOptions(entity)}</select></td>
+        <td class="py-1.5 pr-3"><select class="deliver-location ${INPUT_CLASS}">${options}</select></td>
+        <td class="py-1.5 pr-3"><input class="deliver-code ${INPUT_CLASS}" value="${esc(code)}" placeholder="Oracle location code" /></td>
+        <td class="py-1.5"><button class="row-remove text-rose-600 hover:text-rose-500 text-sm font-medium">Remove</button></td>
+      </tr>`;
+    }
+
+    function bindRowRemove() {
+      document.querySelectorAll('.row-remove').forEach((b) => { b.onclick = () => b.closest('tr').remove(); });
+    }
+
+    function setTemplateEditors(template) {
+      el('mapTplHeader').value = JSON.stringify(template.header || {}, null, 2);
+      el('mapTplLine').value = JSON.stringify(template.line || {}, null, 2);
+      el('mapTplDistribution').value = JSON.stringify(template.distribution || {}, null, 2);
+    }
+
+    function renderPlaceholderChips(placeholders) {
+      const groups = {};
+      for (const ph of placeholders) (groups[ph.group] = groups[ph.group] || []).push(ph);
+      el('mapPlaceholderChips').innerHTML = Object.entries(groups).map(([group, items]) => `
+        <div class="flex flex-wrap items-center gap-1.5">
+          <span class="w-24 shrink-0 text-xs font-semibold text-gray-500">${esc(group)}</span>
+          ${items.map((ph) => `<button type="button" title="${esc(ph.description)}" data-ph="${esc(ph.name)}"
+              class="ph-chip px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-xs font-mono hover:bg-indigo-100">{${esc(ph.name)}}</button>`).join('')}
+        </div>`).join('');
+      document.querySelectorAll('.ph-chip').forEach((chipBtn) => chipBtn.addEventListener('click', () => {
+        const target = lastFocusedTemplate || el('mapTplLine');
+        const token = `{${chipBtn.dataset.ph}}`;
+        const start = target.selectionStart ?? target.value.length;
+        const end = target.selectionEnd ?? target.value.length;
+        target.value = target.value.slice(0, start) + token + target.value.slice(end);
+        target.focus();
+        target.selectionStart = target.selectionEnd = start + token.length;
+      }));
+    }
+
+    document.querySelectorAll('.map-tpl').forEach((t) => t.addEventListener('focus', () => { lastFocusedTemplate = t; }));
+
+    el('mapTplResetBtn').addEventListener('click', () => {
+      if (!defaultPayloadTemplate) return;
+      if (!confirm('Replace the template with the default? Unsaved template edits are lost.')) return;
+      setTemplateEditors(defaultPayloadTemplate);
+    });
+
+    async function loadMappingsForm() {
+      let data;
+      try {
+        data = await apiJson('/api/oracle/mappings');
+      } catch (err) { showBanner(err.message, 'error'); return; }
+      oracleMappings = data.mappings || {};
+      mappingsLocations = data.locations || [];
+      defaultPayloadTemplate = data.default_payload_template;
+      el('mappingsUnsavedNote').classList.toggle('hidden', !!data.saved);
+      const m = oracleMappings;
+      const gl = m.gl_lookup || {};
+
+      setTemplateEditors(m.payload_template || defaultPayloadTemplate || {});
+      renderPlaceholderChips(data.placeholders || []);
+
+      el('mapEntityBody').innerHTML = ENTITIES.map((e) => `<tr>
+        <td class="py-1.5 pr-3">${entityPill(e)}</td>
+        <td class="py-1.5 pr-3">${mapInput({ group: 'business_unit_names', entity: e }, (m.business_unit_names || {})[e], 'e.g. Hikayat Anber-KSA')}</td>
+        <td class="py-1.5 pr-3">${mapInput({ group: 'business_units', entity: e }, (m.business_units || {})[e], '')}</td>
+        <td class="py-1.5 pr-3">${mapInput({ group: 'deliver_default', entity: e }, ((m.deliver_to_locations || {})[e] || {})['*'], 'e.g. HA Showrooms Stores')}</td>
+        <td class="py-1.5 pr-3">${mapInput({ group: 'deliver_id_default', entity: e }, ((m.deliver_to_location_ids || {})[e] || {})['*'], 'e.g. 300000001415850')}</td>
+        <td class="py-1.5 pr-3">${mapInput({ group: 'destination_organizations', entity: e }, (m.destination_organizations || {})[e], 'e.g. 300000001419003')}</td>
+        <td class="py-1.5 pr-3">${mapInput({ group: 'suspense_cost_center', entity: e }, (m.suspense_cost_center || {})[e], '9999')}</td>
+        <td class="py-1.5 pr-3">${mapInput({ group: 'charge_account_templates', entity: e }, (m.charge_account_templates || {})[e], '01-{cost_center}-540100-000-000')}</td>
+        <td class="py-1.5 pr-3">${mapInput({ group: 'chart_of_accounts_id', entity: e }, (gl.chart_of_accounts_id || {})[e], '')}</td>
+      </tr>`).join('');
+
+      el('mapSupplierBody').innerHTML = ENTITIES.flatMap((e) => CARRIERS.map((c) => {
+        const sup = ((m.suppliers || {})[e] || {})[c] || {};
+        return `<tr>
+          <td class="py-1.5 pr-3">${entityPill(e)}</td>
+          <td class="py-1.5 pr-3">${carrierPill(c)}</td>
+          <td class="py-1.5 pr-3">${mapInput({ group: 'supplier', entity: e, carrier: c, field: 'supplier_name' }, sup.supplier_name, 'Supplier name')}</td>
+          <td class="py-1.5 pr-3">${mapInput({ group: 'supplier', entity: e, carrier: c, field: 'supplier_site' }, sup.supplier_site, 'Site name')}</td>
+          <td class="py-1.5 pr-3">${mapInput({ group: 'supplier', entity: e, carrier: c, field: 'supplier_id' }, sup.supplier_id, '')}</td>
+          <td class="py-1.5 pr-3">${mapInput({ group: 'supplier', entity: e, carrier: c, field: 'supplier_site_id' }, sup.supplier_site_id, '')}</td>
+        </tr>`;
+      })).join('');
+
+      const deliverRows = [];
+      for (const [e, byLocation] of Object.entries(m.deliver_to_locations || {})) {
+        for (const [loc, code] of Object.entries(byLocation || {})) if (loc !== '*') deliverRows.push(deliverRowHtml(e, loc, code));
+      }
+      el('mapDeliverBody').innerHTML = deliverRows.join('');
+
+      const chargeRows = [];
+      for (const [e, byCc] of Object.entries(m.charge_accounts || {})) {
+        for (const [cc, id] of Object.entries(byCc || {})) chargeRows.push(chargeRowHtml(e, cc, id));
+      }
+      el('mapChargeBody').innerHTML = chargeRows.join('');
+      bindRowRemove();
+
+      el('mapCcWidth').value = m.cost_center_width ?? '';
+      el('mapGlResource').value = gl.resource ?? '';
+      el('mapGlIdField').value = gl.id_field ?? '';
+      el('mapGlSegFormat').value = gl.segment_field_format ?? '';
+      el('mapGlSeparator').value = gl.separator ?? '';
+      el('mapGlCoaField').value = gl.chart_of_accounts_field ?? '';
+    }
+
+    el('mapChargeAddBtn').addEventListener('click', () => {
+      el('mapChargeBody').insertAdjacentHTML('beforeend', chargeRowHtml());
+      bindRowRemove();
+    });
+
+    el('mapDeliverAddBtn').addEventListener('click', () => {
+      if (!mappingsLocations.length) { showBanner('No locations in master data yet. Import the master workbook first.', 'error'); return; }
+      el('mapDeliverBody').insertAdjacentHTML('beforeend', deliverRowHtml());
+      bindRowRemove();
+    });
+
+    // Oracle IDs are numeric; keep anything non-numeric (e.g. a typo) as text so the backend reports it.
+    function idValue(v) {
+      const t = String(v).trim();
+      return /^\d+$/.test(t) ? Number(t) : t;
+    }
+
+    function parseTemplateSection(id, label) {
+      try {
+        const value = JSON.parse(el(id).value || '{}');
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('must be a JSON object');
+        return value;
+      } catch (err) {
+        throw new Error(`Payload template ${label}: ${err.message}`);
+      }
+    }
+
+    function collectMappings() {
+      const m = JSON.parse(JSON.stringify(oracleMappings || {})); // keep any keys this form doesn't edit
+      m.payload_template = {
+        header: parseTemplateSection('mapTplHeader', 'Header'),
+        line: parseTemplateSection('mapTplLine', 'Line'),
+        distribution: parseTemplateSection('mapTplDistribution', 'Distribution'),
+      };
+      m.business_unit_names = {};
+      m.business_units = {};
+      m.suspense_cost_center = {};
+      m.charge_account_templates = {};
+      m.suppliers = {};
+      m.deliver_to_locations = {};
+      m.destination_organizations = {};
+      // per-location IDs aren't edited here; only the entity default ('*') is
+      m.deliver_to_location_ids = Object.fromEntries(Object.entries(m.deliver_to_location_ids || {})
+        .map(([e, byLoc]) => [e, Object.fromEntries(Object.entries(byLoc || {}).filter(([loc]) => loc !== '*'))]));
+      m.charge_accounts = {};
+      m.gl_lookup = { ...(m.gl_lookup || {}), chart_of_accounts_id: {} };
+
+      document.querySelectorAll('.map-input').forEach((input) => {
+        const v = input.value.trim();
+        if (!v) return;
+        const { group, entity, carrier, field } = input.dataset;
+        if (group === 'business_unit_names') m.business_unit_names[entity] = v;
+        else if (group === 'business_units') m.business_units[entity] = idValue(v);
+        else if (group === 'deliver_default') (m.deliver_to_locations[entity] = m.deliver_to_locations[entity] || {})['*'] = v;
+        else if (group === 'deliver_id_default') (m.deliver_to_location_ids[entity] = m.deliver_to_location_ids[entity] || {})['*'] = idValue(v);
+        else if (group === 'destination_organizations') m.destination_organizations[entity] = idValue(v);
+        else if (group === 'suspense_cost_center') m.suspense_cost_center[entity] = v;
+        else if (group === 'charge_account_templates') m.charge_account_templates[entity] = v;
+        else if (group === 'chart_of_accounts_id') m.gl_lookup.chart_of_accounts_id[entity] = idValue(v);
+        else if (group === 'supplier') {
+          m.suppliers[entity] = m.suppliers[entity] || {};
+          m.suppliers[entity][carrier] = m.suppliers[entity][carrier] || {};
+          m.suppliers[entity][carrier][field] = field.endsWith('_id') ? idValue(v) : v;
+        }
+      });
+
+      document.querySelectorAll('.deliver-row').forEach((row) => {
+        const entity = row.querySelector('.deliver-entity').value;
+        const location = row.querySelector('.deliver-location').value;
+        const code = row.querySelector('.deliver-code').value.trim();
+        if (!location || !code) return;
+        (m.deliver_to_locations[entity] = m.deliver_to_locations[entity] || {})[location] = code;
+      });
+
+      document.querySelectorAll('.charge-row').forEach((row) => {
+        const entity = row.querySelector('.charge-entity').value;
+        const cc = row.querySelector('.charge-cc').value.trim();
+        const id = row.querySelector('.charge-id').value.trim();
+        if (!cc || !id) return;
+        m.charge_accounts[entity] = m.charge_accounts[entity] || {};
+        m.charge_accounts[entity][cc] = idValue(id);
+      });
+
+      const width = el('mapCcWidth').value.trim();
+      if (width) m.cost_center_width = Number(width); else delete m.cost_center_width;
+      const glFields = { resource: 'mapGlResource', id_field: 'mapGlIdField', segment_field_format: 'mapGlSegFormat', separator: 'mapGlSeparator', chart_of_accounts_field: 'mapGlCoaField' };
+      for (const [key, id] of Object.entries(glFields)) {
+        const v = el(id).value.trim();
+        if (v) m.gl_lookup[key] = v; else delete m.gl_lookup[key];
+      }
+      return m;
+    }
+
+    el('mapSaveBtn').addEventListener('click', async () => {
+      try {
+        await apiJson('/api/oracle/mappings', jsonRequest('PUT', collectMappings()));
+        await loadMappingsForm();
+        await loadOracleStatus();
+        showBanner('Oracle mappings saved.', 'success');
+      } catch (err) { showBanner(err.message, 'error'); }
+    });
+
+    // ---- Selection + bulk create (Run Sync and Invoice Archive) ----
+
+    const archiveSelected = new Set(); // invoiceKey
+    const syncSelected = new Set();    // invoiceKey
+
+    // Already in Oracle (or deliberately skipped) => can't be selected again.
+    function isSelectableForOracle(state) {
+      const status = state && state.oracle_status;
+      if (!status) return true;
+      if (status === 'submitted' || status === 'duplicate') return false;
+      if (status === 'attached') return !!(oracleStatus && oracleStatus.auto_submit); // still needs submitting
+      return true; // failed / created: a retry resumes where it stopped
+    }
+
+    function updateBulkBar(prefix, selected) {
+      el(`${prefix}BulkBar`).classList.toggle('hidden', selected.size === 0);
+      el(`${prefix}SelectedCount`).textContent = selected.size;
+      const btn = el(`${prefix}BulkCreateBtn`);
+      const live = !!(oracleStatus && oracleStatus.live_mode);
+      btn.disabled = !live || !!activeBulkId;
+      btn.title = !live ? 'Turn on Live mode in Oracle Sync → Settings first.' : activeBulkId ? 'A bulk run is in progress.' : '';
+    }
+
+    function bindArchiveSelection(filtered) {
+      document.querySelectorAll('.archive-select').forEach((cb) => cb.addEventListener('change', () => {
+        if (cb.checked) archiveSelected.add(cb.dataset.key); else archiveSelected.delete(cb.dataset.key);
+        updateBulkBar('archive', archiveSelected);
+        syncSelectAllBox('archiveSelectAll', '.archive-select');
+      }));
+      syncSelectAllBox('archiveSelectAll', '.archive-select');
+      updateBulkBar('archive', archiveSelected);
+    }
+
+    function bindSyncSelection() {
+      document.querySelectorAll('.sync-select').forEach((cb) => cb.addEventListener('change', () => {
+        const key = invoiceKey(lastSyncResults[Number(cb.dataset.i)]);
+        if (cb.checked) syncSelected.add(key); else syncSelected.delete(key);
+        updateBulkBar('sync', syncSelected);
+        syncSelectAllBox('syncSelectAll', '.sync-select');
+      }));
+      syncSelectAllBox('syncSelectAll', '.sync-select');
+      updateBulkBar('sync', syncSelected);
+    }
+
+    function syncSelectAllBox(id, selector) {
+      const boxes = [...document.querySelectorAll(selector)].filter((b) => !b.disabled);
+      const box = el(id);
+      box.disabled = boxes.length === 0;
+      box.checked = boxes.length > 0 && boxes.every((b) => b.checked);
+      box.indeterminate = !box.checked && boxes.some((b) => b.checked);
+    }
+
+    el('archiveSelectAll').addEventListener('change', (e) => {
+      document.querySelectorAll('.archive-select').forEach((cb) => {
+        if (cb.disabled) return;
+        cb.checked = e.target.checked;
+        if (cb.checked) archiveSelected.add(cb.dataset.key); else archiveSelected.delete(cb.dataset.key);
+      });
+      updateBulkBar('archive', archiveSelected);
+    });
+    el('syncSelectAll').addEventListener('change', (e) => {
+      document.querySelectorAll('.sync-select').forEach((cb) => {
+        if (cb.disabled) return;
+        cb.checked = e.target.checked;
+        const key = invoiceKey(lastSyncResults[Number(cb.dataset.i)]);
+        if (cb.checked) syncSelected.add(key); else syncSelected.delete(key);
+      });
+      updateBulkBar('sync', syncSelected);
+    });
+    el('archiveClearSelectionBtn').addEventListener('click', () => { archiveSelected.clear(); renderArchive(); });
+    el('syncClearSelectionBtn').addEventListener('click', () => {
+      syncSelected.clear();
+      document.querySelectorAll('.sync-select').forEach((cb) => { cb.checked = false; });
+      syncSelectAllBox('syncSelectAll', '.sync-select');
+      updateBulkBar('sync', syncSelected);
+    });
+
+    function refsFromKeys(keys) {
+      return [...keys].map((k) => {
+        const [entity, provider, account_number, month] = k.split('|');
+        return { entity, provider, account_number, month };
+      });
+    }
+
+    async function startBulkCreate(selected, prefix) {
+      if (!oracleStatus) await loadOracleStatus();
+      const refs = refsFromKeys(selected);
+      if (!refs.length) return;
+      const submitNote = oracleStatus && oracleStatus.auto_submit ? ', attach its PDF and submit it for approval' : ' and attach its PDF';
+      const reqCount = new Set(refs.map((r) => `${r.entity}|${r.provider}|${r.month}`)).size;
+      if (!confirm(`Create ${reqCount} purchase requisition${reqCount === 1 ? '' : 's'} in Oracle for ${refs.length} selected row${refs.length === 1 ? '' : 's'}?\n\nOne requisition per carrier per month, each selected account invoice on its own line with its PDF: create the requisition${submitNote}. Invoices already in Oracle are skipped.`)) return;
+      try {
+        const state = await apiJson('/api/oracle/bulk', jsonRequest('POST', { invoices: refs }));
+        selected.clear();
+        updateBulkBar(prefix, selected);
+        document.querySelectorAll(prefix === 'sync' ? '.sync-select' : '.archive-select').forEach((cb) => { cb.checked = false; });
+        showBulkPanel(state);
+      } catch (err) {
+        showSyncError(err);
+      }
+    }
+
+    el('archiveBulkCreateBtn').addEventListener('click', () => startBulkCreate(archiveSelected, 'archive'));
+    el('syncBulkCreateBtn').addEventListener('click', () => startBulkCreate(syncSelected, 'sync'));
+
+    // ---- Bulk progress panel (polls the server-side loop) ----
+
+    let activeBulkId = null;
+    let bulkPollTimer = null;
+    let bulkListCollapsed = false;
+
+    const BULK_ITEM_ICON = {
+      queued: '<span class="w-4 h-4 rounded-full border-2 border-gray-200 inline-block"></span>',
+      running: '<span class="w-4 h-4 rounded-full border-2 border-indigo-200 border-t-indigo-600 inline-block animate-spin"></span>',
+      cancelled: '<span class="w-4 h-4 rounded-full bg-gray-100 text-gray-400 inline-flex items-center justify-center text-[10px]">–</span>',
+    };
+    const BULK_RESULT_ICON = {
+      submitted: '<span class="w-4 h-4 rounded-full bg-emerald-500 text-white inline-flex items-center justify-center text-[10px]">✓</span>',
+      attached: '<span class="w-4 h-4 rounded-full bg-emerald-500 text-white inline-flex items-center justify-center text-[10px]">✓</span>',
+      skipped: '<span class="w-4 h-4 rounded-full bg-gray-300 text-white inline-flex items-center justify-center text-[10px]">↷</span>',
+      failed: '<span class="w-4 h-4 rounded-full bg-rose-500 text-white inline-flex items-center justify-center text-[10px]">✕</span>',
+    };
+
+    function renderBulkPanel(state) {
+      const finished = state.status !== 'running';
+      const pct = state.total ? Math.round((state.done / state.total) * 100) : 0;
+      el('bulkPanel').classList.remove('hidden');
+      el('bulkTitle').textContent = finished
+        ? (state.status === 'cancelled' ? 'Bulk run stopped' : state.status === 'error' ? 'Bulk run failed' : 'Bulk run finished')
+        : 'Creating requisitions in Oracle';
+      el('bulkSubtitle').textContent = `Run ${state.batch_id}${state.message ? ' · ' + state.message : ''}`;
+      el('bulkBar').style.width = `${pct}%`;
+      el('bulkProgressText').textContent = `${state.done} of ${state.total} processed (${pct}%)`;
+      el('bulkCounts').innerHTML = Object.entries(state.counts || {}).map(([k, v]) =>
+        `<span class="px-2 py-0.5 rounded-full font-semibold ${RESULT_THEME[k] || 'bg-gray-100 text-gray-600'}">${v} ${esc(k)}</span>`).join('');
+      el('bulkCurrent').innerHTML = state.current
+        ? `Now: <b>${esc(state.current.account_number)}</b> · ${esc(state.current.entity)} ${esc(state.current.provider)} · ${esc(state.current.month.replace(/_/g, ' '))}`
+        : '';
+      el('bulkItems').classList.toggle('hidden', bulkListCollapsed);
+      el('bulkCollapseBtn').textContent = bulkListCollapsed ? 'Show list' : 'Hide list';
+      el('bulkItems').innerHTML = state.items.map((it) => {
+        const icon = it.state === 'done' ? (BULK_RESULT_ICON[it.result] || BULK_ITEM_ICON.queued) : BULK_ITEM_ICON[it.state] || BULK_ITEM_ICON.queued;
+        const detail = it.state === 'done'
+          ? (it.requisition_number ? `<span class="text-gray-700 font-medium">${esc(it.requisition_number)}</span>` : '') +
+            (it.reason ? `<span class="block ${it.result === 'failed' ? 'text-rose-600' : 'text-gray-400'} truncate" title="${esc(it.reason)}">${esc(it.reason)}</span>` : '')
+          : `<span class="text-gray-400">${esc(it.state)}</span>`;
+        return `<li class="px-4 py-2 flex items-start gap-2.5 ${it.state === 'running' ? 'bg-indigo-50/60' : ''}">
+          <span class="mt-0.5 shrink-0">${icon}</span>
+          <div class="min-w-0 flex-1"><div class="flex justify-between gap-2"><span class="font-medium text-gray-900">${esc(it.account_number)}</span>
+            <span class="text-gray-400">${esc(it.month.replace(/_/g, ' '))}</span></div>${detail}</div></li>`;
+      }).join('');
+      const running = state.items.find((it) => it.state === 'running');
+      if (running && !bulkListCollapsed) {
+        const idx = state.items.indexOf(running);
+        const li = el('bulkItems').children[idx];
+        if (li) li.scrollIntoView({ block: 'nearest' });
+      }
+      el('bulkStopBtn').classList.toggle('hidden', finished);
+      el('bulkResponsesBtn').classList.toggle('hidden', !finished);
+      el('bulkCloseBtn').classList.toggle('hidden', !finished);
+    }
+
+    function showBulkPanel(state) {
+      activeBulkId = state.batch_id;
+      bulkListCollapsed = false;
+      renderBulkPanel(state);
+      clearInterval(bulkPollTimer);
+      bulkPollTimer = setInterval(pollBulk, 1000);
+      updateBulkBar('archive', archiveSelected);
+      updateBulkBar('sync', syncSelected);
+    }
+
+    async function pollBulk() {
+      if (!activeBulkId) return;
+      let state;
+      try {
+        state = await apiJson(`/api/oracle/bulk/${encodeURIComponent(activeBulkId)}`);
+      } catch (err) {
+        clearInterval(bulkPollTimer);
+        el('bulkSubtitle').textContent = err.message;
+        return;
+      }
+      renderBulkPanel(state);
+      if (state.status !== 'running') {
+        clearInterval(bulkPollTimer);
+        const finishedId = activeBulkId;
+        activeBulkId = null;
+        await Promise.all([loadInvoiceStates(), loadAlertCount()]);
+        renderArchive();
+        updateBulkBar('archive', archiveSelected);
+        updateBulkBar('sync', syncSelected);
+        if (!el('view-responses').classList.contains('hidden')) loadResponsesView();
+        el('bulkResponsesBtn').onclick = () => { respBatchFilterValue = finishedId; switchView('responses'); };
+      }
+    }
+
+    el('bulkStopBtn').addEventListener('click', async () => {
+      if (!activeBulkId) return;
+      if (!confirm('Stop the bulk run? The invoice being processed now finishes; the rest are not sent.')) return;
+      try { await apiJson(`/api/oracle/bulk/${encodeURIComponent(activeBulkId)}/cancel`, { method: 'POST' }); } catch (err) { showBanner(err.message, 'error'); }
+    });
+    el('bulkCollapseBtn').addEventListener('click', () => {
+      bulkListCollapsed = !bulkListCollapsed;
+      el('bulkItems').classList.toggle('hidden', bulkListCollapsed);
+      el('bulkCollapseBtn').textContent = bulkListCollapsed ? 'Show list' : 'Hide list';
+    });
+    el('bulkCloseBtn').addEventListener('click', () => el('bulkPanel').classList.add('hidden'));
+
+    async function resumeActiveBulk() {
+      try {
+        const data = await apiJson('/api/oracle/bulk/active');
+        if (data.job) showBulkPanel(data.job);
+      } catch (e) { /* no active run */ }
+    }
+
+    // ---- Oracle Responses view ----
+
+    let respBatchFilterValue = '';
+    let respPage = 1;
+    const RESP_PAGE_SIZE = 50;
+    let respRows = [];
+    const STEP_LABELS = { create: 'Create requisition', attach: 'Attach PDF', submit: 'Submit for approval', duplicate_check: 'Duplicate check', gl_lookup: 'GL account lookup' };
+    const BATCH_STATUS_THEME = {
+      running: 'bg-indigo-50 text-indigo-700', finished: 'bg-emerald-50 text-emerald-700', cancelled: 'bg-gray-100 text-gray-600',
+      interrupted: 'bg-amber-50 text-amber-800', error: 'bg-rose-50 text-rose-700',
+    };
+
+    function durationText(start, end) {
+      if (!start || !end) return '';
+      const secs = Math.max(0, Math.round((new Date(end) - new Date(start)) / 1000));
+      return secs >= 60 ? `${Math.floor(secs / 60)}m ${secs % 60}s` : `${secs}s`;
+    }
+
+    async function loadResponsesView() {
+      let batches = [];
+      try { batches = (await apiJson('/api/oracle/batches')).batches || []; } catch (err) { showBanner(err.message, 'error'); }
+      const body = el('respBatchesBody');
+      body.innerHTML = '';
+      el('respBatchesEmpty').classList.toggle('hidden', batches.length > 0);
+      for (const b of batches) {
+        const tr = document.createElement('tr');
+        tr.className = `cursor-pointer hover:bg-indigo-50/50 transition ${b.id === respBatchFilterValue ? 'bg-indigo-50' : ''}`;
+        tr.innerHTML = `
+          <td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">${esc((b.started_at || '').replace('T', ' '))}</td>
+          <td class="px-4 py-3 font-mono text-xs text-gray-700">${esc(b.id)}</td>
+          <td class="px-4 py-3 text-gray-600 capitalize">${esc(b.source)}</td>
+          <td class="px-4 py-3"><span class="px-2 py-0.5 rounded-full text-xs font-medium ${BATCH_STATUS_THEME[b.status] || 'bg-gray-100 text-gray-600'}">${esc(b.status)}</span></td>
+          <td class="px-4 py-3 text-right">${b.total}</td>
+          <td class="px-4 py-3 text-right text-emerald-700 font-medium">${b.created}</td>
+          <td class="px-4 py-3 text-right ${b.failed ? 'text-rose-700 font-medium' : 'text-gray-400'}">${b.failed}</td>
+          <td class="px-4 py-3 text-right text-gray-500">${b.skipped}</td>
+          <td class="px-4 py-3 text-xs text-gray-500">${esc(durationText(b.started_at, b.finished_at))}</td>`;
+        tr.addEventListener('click', () => {
+          respBatchFilterValue = respBatchFilterValue === b.id ? '' : b.id;
+          respPage = 1;
+          loadResponsesView();
+        });
+        body.appendChild(tr);
+      }
+      const sel = el('respBatchFilter');
+      sel.innerHTML = '<option value="">All runs</option>' + batches.map((b) =>
+        `<option value="${esc(b.id)}">${esc((b.started_at || '').replace('T', ' '))} · ${esc(b.source)} · ${b.total} invoice(s)</option>`).join('');
+      sel.value = batches.some((b) => b.id === respBatchFilterValue) ? respBatchFilterValue : '';
+      if (!sel.value) respBatchFilterValue = '';
+      await loadResponses();
+    }
+
+    function responseParams(limit, offset) {
+      const params = new URLSearchParams();
+      if (respBatchFilterValue) params.set('batch_id', respBatchFilterValue);
+      if (el('respOutcomeFilter').value) params.set('outcome', el('respOutcomeFilter').value);
+      if (el('respStepFilter').value) params.set('step', el('respStepFilter').value);
+      if (el('respSearch').value.trim()) params.set('search', el('respSearch').value.trim());
+      params.set('limit', limit);
+      params.set('offset', offset);
+      return params;
+    }
+
+    async function loadResponses() {
+      let data = { rows: [], total: 0 };
+      try { data = await apiJson(`/api/oracle/responses?${responseParams(RESP_PAGE_SIZE, (respPage - 1) * RESP_PAGE_SIZE)}`); } catch (err) { showBanner(err.message, 'error'); }
+      respRows = data.rows || [];
+      const body = el('respBody');
+      body.innerHTML = '';
+      el('respEmpty').classList.toggle('hidden', respRows.length > 0);
+      el('respCount').textContent = `${data.total} response${data.total === 1 ? '' : 's'}`;
+      respRows.forEach((r, i) => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50/70 transition';
+        const http = r.http_status
+          ? `<span class="px-2 py-0.5 rounded-full text-xs font-semibold ${r.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}">${r.http_status}</span>`
+          : `<span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700">no reply</span>`;
+        tr.innerHTML = `
+          <td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">${esc((r.created_at || '').replace('T', ' '))}</td>
+          <td class="px-4 py-3">${entityPill(r.entity)}</td>
+          <td class="px-4 py-3">${carrierPill(r.provider)}</td>
+          <td class="px-4 py-3 font-medium text-gray-900">${esc(r.account_number)}</td>
+          <td class="px-4 py-3 text-gray-600 whitespace-nowrap">${esc((r.month || '').replace(/_/g, ' '))}</td>
+          <td class="px-4 py-3 text-gray-700 whitespace-nowrap">${esc(STEP_LABELS[r.step] || r.step)}</td>
+          <td class="px-4 py-3">${http}</td>
+          <td class="px-4 py-3 text-gray-700">${esc(r.requisition_number || '')}</td>
+          <td class="px-4 py-3 text-xs text-gray-500">${esc(r.requisition_header_id || '')}</td>
+          <td class="px-4 py-3 text-xs ${r.ok ? 'text-gray-400' : 'text-rose-700'} max-w-xs truncate" title="${esc(r.error || '')}">${esc(r.error || 'OK')}</td>
+          <td class="px-4 py-3 text-right text-xs text-gray-500">${r.elapsed_ms ?? ''}</td>
+          <td class="px-4 py-3"><button class="resp-view-btn text-indigo-600 hover:text-indigo-500 text-sm font-medium" data-id="${r.id}">View</button></td>`;
+        body.appendChild(tr);
+      });
+      document.querySelectorAll('.resp-view-btn').forEach((b) => b.addEventListener('click', () => showResponseDetail(Number(b.dataset.id))));
+      const totalPages = Math.max(1, Math.ceil(data.total / RESP_PAGE_SIZE));
+      el('respPageInfo').textContent = `Page ${respPage} of ${totalPages}`;
+      el('respPrevBtn').disabled = respPage <= 1;
+      el('respNextBtn').disabled = respPage >= totalPages;
+    }
+
+    function prettyJson(text) {
+      if (!text) return '';
+      try { return JSON.stringify(JSON.parse(text), null, 2); } catch (e) { return text; }
+    }
+
+    async function showResponseDetail(id) {
+      let r;
+      try { r = await apiJson(`/api/oracle/responses/${id}`); } catch (err) { showBanner(err.message, 'error'); return; }
+      let parsed = null;
+      try { parsed = r.response_json ? JSON.parse(r.response_json) : null; } catch (e) { parsed = null; }
+      const highlights = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? Object.entries(parsed).filter(([k, v]) => v !== null && typeof v !== 'object').slice(0, 12)
+        : [];
+      openInfoModal(`${STEP_LABELS[r.step] || r.step} — ${r.account_number}`, `
+        <div class="rounded-xl border border-gray-100 p-4 grid sm:grid-cols-3 gap-x-6 gap-y-3">
+          ${[['Invoice', `${r.entity} · ${r.provider} · ${r.account_number} · ${(r.month || '').replace(/_/g, ' ')}`],
+             ['Request', `${r.method} ${r.path}`], ['HTTP status', r.http_status ?? 'no reply'],
+             ['Requisition #', r.requisition_number || '—'], ['Header ID', r.requisition_header_id || '—'],
+             ['Time', `${(r.created_at || '').replace('T', ' ')} · ${r.elapsed_ms ?? '?'} ms`], ['Run', r.batch_id || '—'],
+             ['Result', r.ok ? 'Succeeded' : (r.error || 'Failed')]]
+            .map(([k, v]) => `<div class="min-w-0"><div class="text-[11px] uppercase tracking-wide text-gray-400 font-medium">${esc(k)}</div><div class="text-sm text-gray-800 break-words">${esc(v)}</div></div>`).join('')}
+        </div>
+        ${highlights.length ? `<h4 class="text-sm font-semibold text-gray-900 mt-5 mb-2">Returned by Oracle</h4>
+          <div class="rounded-xl border border-gray-100 bg-gray-50/50 p-4 grid sm:grid-cols-3 gap-x-6 gap-y-2.5">
+          ${highlights.map(([k, v]) => `<div class="min-w-0"><div class="text-[11px] uppercase tracking-wide text-gray-400 font-medium">${esc(oracleFieldLabel(k))}</div><div class="text-sm text-gray-800 break-words">${esc(v)}</div></div>`).join('')}</div>` : ''}
+        <div class="mt-5 flex gap-3">
+          <button type="button" id="respShowRawBtn" class="${BTN_CLASS}">Show request &amp; response (JSON)</button>
+        </div>
+        <div id="respRawBlock" class="hidden mt-3 space-y-3">
+          <div><p class="text-xs font-medium text-gray-500 mb-1">Request sent</p>
+            <pre class="bg-slate-900 text-slate-100 rounded-xl p-3 text-xs overflow-x-auto max-h-80">${esc(prettyJson(r.request_json) || '(no body)')}</pre></div>
+          <div><p class="text-xs font-medium text-gray-500 mb-1">Response received</p>
+            <pre class="bg-slate-900 text-slate-100 rounded-xl p-3 text-xs overflow-x-auto max-h-96">${esc(prettyJson(r.response_json) || '(empty)')}</pre></div>
+        </div>`, [], { wide: true });
+      el('respShowRawBtn').addEventListener('click', () => {
+        const hidden = el('respRawBlock').classList.toggle('hidden');
+        el('respShowRawBtn').textContent = hidden ? 'Show request & response (JSON)' : 'Hide JSON';
+      });
+    }
+
+    el('respReloadBtn').addEventListener('click', loadResponsesView);
+    el('respBatchFilter').addEventListener('change', (e) => { respBatchFilterValue = e.target.value; respPage = 1; loadResponsesView(); });
+    el('respOutcomeFilter').addEventListener('change', () => { respPage = 1; loadResponses(); });
+    el('respStepFilter').addEventListener('change', () => { respPage = 1; loadResponses(); });
+    let respSearchDebounce = null;
+    el('respSearch').addEventListener('input', () => {
+      clearTimeout(respSearchDebounce);
+      respSearchDebounce = setTimeout(() => { respPage = 1; loadResponses(); }, 300);
+    });
+    el('respPrevBtn').addEventListener('click', () => { if (respPage > 1) { respPage -= 1; loadResponses(); } });
+    el('respNextBtn').addEventListener('click', () => { respPage += 1; loadResponses(); });
+    el('respExportBtn').addEventListener('click', async () => {
+      try {
+        const data = await apiJson(`/api/oracle/responses?${responseParams(100000, 0)}`);
+        exportToCsv('oracle_responses.csv', (data.rows || []).map((r) => ({ ...r, step: STEP_LABELS[r.step] || r.step, ok: r.ok ? 'OK' : 'Error' })), [
+          { key: 'created_at', label: 'Time' }, { key: 'batch_id', label: 'Run' }, { key: 'entity', label: 'Entity' },
+          { key: 'provider', label: 'Carrier' }, { key: 'account_number', label: 'Account' }, { key: 'month', label: 'Month' },
+          { key: 'step', label: 'Step' }, { key: 'http_status', label: 'HTTP status' }, { key: 'ok', label: 'Outcome' },
+          { key: 'requisition_number', label: 'Requisition #' }, { key: 'requisition_header_id', label: 'Header ID' },
+          { key: 'error', label: 'Error' }, { key: 'elapsed_ms', label: 'Time (ms)' },
+        ]);
+      } catch (err) { showBanner(err.message, 'error'); }
+    });
+
+    // ---- Sidebar navigation: switch between the main views ----
+    const VIEW_TITLES = { dashboard: 'Dashboard', archive: 'Invoice Archive', master: 'Master Data', oracle: 'Oracle Sync', responses: 'Oracle Responses' };
 
     function switchView(view) {
       document.querySelectorAll('.view').forEach((v) => v.classList.add('hidden'));
@@ -2148,6 +4135,8 @@
       el('viewTitle').textContent = VIEW_TITLES[view] || view;
       // Refresh/Download All only make sense on the Dashboard view.
       el('dashboardActions').classList.toggle('hidden', view !== 'dashboard');
+      if (view === 'oracle') enterOracleView();
+      if (view === 'responses') loadResponsesView();
     }
 
     document.querySelectorAll('.nav-item').forEach((btn) => {
@@ -2159,8 +4148,10 @@
       await loadEntities();
       populateMasterFilterDropdowns();
       await loadAccounts();
+      await loadOracleStatus();
       await loadArchive();
       await loadMasterData();
+      await resumeActiveBulk();
     })();
   </script>
 </body>
