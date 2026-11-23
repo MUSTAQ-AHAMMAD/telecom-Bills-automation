@@ -110,6 +110,21 @@ class InvoiceAmountInput(InvoiceRef):
     amount: float
 
 
+class InvoiceFileRef(BaseModel):
+    """One exact archived invoice file, as listed by /api/invoices."""
+    entity: str
+    provider: str
+    account_number: str
+    month: str
+    status: str
+    filename: str
+
+
+class DownloadSelectedRequest(BaseModel):
+    """Exact invoice files to zip together (the account-download picker)."""
+    invoices: List[InvoiceFileRef]
+
+
 class BulkSyncRequest(BaseModel):
     """Invoices selected in the dashboard to create in Oracle one after another."""
     invoices: List[InvoiceRef]

@@ -992,8 +992,9 @@
         <h2 class="text-lg font-semibold text-gray-900">Download invoices by account</h2>
         <button id="acctDlClose" class="text-gray-400 hover:text-gray-700 text-2xl leading-none">&times;</button>
       </div>
-      <p class="text-sm text-gray-500 mb-4">Tick the accounts you want. All their invoices matching the filters below are downloaded together as one zip.</p>
-      <div class="flex flex-wrap gap-2 mb-3">
+      <p class="text-sm text-gray-500 mb-4">Tick the accounts you want. Exactly the invoices listed for them are downloaded together as one zip.</p>
+      <p id="acctDlScope" class="hidden text-sm text-indigo-800 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 mb-3"></p>
+      <div id="acctDlFilters" class="flex flex-wrap gap-2 mb-3">
         <select id="acctDlEntity" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700"><option value="">All Entities</option></select>
         <select id="acctDlCarrier" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700"><option value="">All Carriers</option></select>
         <select id="acctDlMonth" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-700"><option value="">All Months</option></select>
@@ -1005,6 +1006,7 @@
       </div>
       <input id="acctDlSearch" type="text" placeholder="Search account number..."
         class="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 mb-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white" />
+      <div id="acctDlHint" class="hidden flex items-start gap-3 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-2"></div>
       <label class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 border-b border-gray-100">
         <input id="acctDlSelectAll" type="checkbox" class="rounded" />
         Select all shown
@@ -2295,12 +2297,22 @@
     });
 
     // ---- Download by account (shared by Dashboard and Invoice Archive) ----
-    // Lists every account that has downloaded invoices on disk (from
-    // archiveInvoices), lets the user tick several, and downloads all their
-    // matching PDFs as one zip via /api/download-all?account_numbers=...
+    // Opened from the Invoice Archive, the picker lists exactly the invoices
+    // the archive table is showing (every archive filter applied: entity,
+    // carrier, login, month, account, location, store, status), so "what you
+    // see is what you download". Opened from the Dashboard, it lists every
+    // downloaded invoice with its own entity/carrier/month/status filters.
+    // The download sends the exact invoice files ticked — the server never
+    // re-filters — via POST /api/download-selected.
     const acctDlSelected = new Set();
+    let acctDlMode = 'dashboard'; // 'archive' = locked to archive filters, 'dashboard' = own filters
+
+    function acctDlBaseInvoices() {
+      return acctDlMode === 'archive' ? getFilteredArchiveInvoices() : archiveInvoices;
+    }
 
     function acctDlMatchingInvoices() {
+      if (acctDlMode === 'archive') return acctDlBaseInvoices();
       const entity = el('acctDlEntity').value;
       const carrier = el('acctDlCarrier').value;
       const month = el('acctDlMonth').value;
@@ -2312,14 +2324,18 @@
         (!status || inv.status === status));
     }
 
-    // Accounts currently shown in the list (after filters + search), with counts.
+    function acctDlSearchTerm() {
+      return el('acctDlSearch').value.trim().toLowerCase();
+    }
+
+    // Accounts currently listed (after filters + search), each with its invoices.
     function acctDlShownAccounts() {
-      const search = el('acctDlSearch').value.trim().toLowerCase();
+      const search = acctDlSearchTerm();
       const byAccount = new Map();
       for (const inv of acctDlMatchingInvoices()) {
         if (search && !inv.account_number.toLowerCase().includes(search)) continue;
-        const row = byAccount.get(inv.account_number) || { account_number: inv.account_number, entity: inv.entity, provider: inv.provider, count: 0 };
-        row.count += 1;
+        const row = byAccount.get(inv.account_number) || { account_number: inv.account_number, entity: inv.entity, provider: inv.provider, account_slot: inv.account_slot, invoices: [] };
+        row.invoices.push(inv);
         byAccount.set(inv.account_number, row);
       }
       return [...byAccount.values()].sort((a, b) => a.account_number.localeCompare(b.account_number));
@@ -2333,19 +2349,59 @@
       if (values.includes(current)) select.value = current;
     }
 
+    function acctDlInvoiceLabel(inv) {
+      const login = inv.account_slot != null ? `, login Account ${inv.account_slot}` : '';
+      return `${inv.status}, ${inv.month.replace(/_/g, ' ')}${login}`;
+    }
+
+    // When a search finds nothing in the current list but the account does
+    // have downloaded invoices, say what's hiding them and offer to show them.
+    function renderAcctDlHint(shown) {
+      const hint = el('acctDlHint');
+      const search = acctDlSearchTerm();
+      const hidden = search && !shown.length
+        ? archiveInvoices.filter((inv) => inv.account_number.toLowerCase().includes(search))
+        : [];
+      if (!hidden.length) {
+        hint.classList.add('hidden');
+        hint.innerHTML = '';
+        return;
+      }
+      const details = hidden.slice(0, 3).map((inv) => `${esc(inv.account_number)} (${esc(acctDlInvoiceLabel(inv))})`).join('; ');
+      const where = acctDlMode === 'archive' ? "the Invoice Archive's current filters" : 'the filters above';
+      hint.innerHTML = `<span>${hidden.length} invoice(s) match your search but are hidden by ${where}: ${details}${hidden.length > 3 ? '…' : ''}</span>
+        <button id="acctDlShowHidden" class="ml-auto shrink-0 font-semibold text-indigo-700 hover:underline">Show them</button>`;
+      hint.classList.remove('hidden');
+      el('acctDlShowHidden').addEventListener('click', () => {
+        acctDlMode = 'dashboard';
+        ['acctDlEntity', 'acctDlCarrier', 'acctDlMonth', 'acctDlStatus'].forEach((id) => { el(id).value = ''; });
+        renderAcctDl();
+      });
+    }
+
     function renderAcctDl() {
+      const archiveMode = acctDlMode === 'archive';
+      el('acctDlFilters').classList.toggle('hidden', archiveMode);
+      el('acctDlScope').classList.toggle('hidden', !archiveMode);
+      if (archiveMode) {
+        el('acctDlScope').textContent = `Showing the ${acctDlBaseInvoices().length} invoice(s) currently listed in the Invoice Archive (its filters apply).`;
+      }
+
       const shown = acctDlShownAccounts();
       const list = el('acctDlList');
       if (!shown.length) {
-        list.innerHTML = '<p class="text-sm text-gray-400 text-center py-8">No downloaded invoices match these filters.</p>';
+        list.innerHTML = '<p class="text-sm text-gray-400 text-center py-8">No downloaded invoices match.</p>';
       } else {
-        list.innerHTML = shown.map((a) => `
+        list.innerHTML = shown.map((a) => {
+          const detail = a.invoices.map(acctDlInvoiceLabel).join(' · ');
+          return `
           <label class="flex items-center gap-3 px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer">
             <input type="checkbox" class="acct-dl-cb rounded" data-acct="${esc(a.account_number)}" ${acctDlSelected.has(a.account_number) ? 'checked' : ''} />
-            <span class="font-medium text-gray-900 w-36">${esc(a.account_number)}</span>
-            <span class="text-gray-500">${esc(a.entity)} · ${esc(a.provider)}</span>
-            <span class="ml-auto text-gray-400">${a.count} invoice${a.count === 1 ? '' : 's'}</span>
-          </label>`).join('');
+            <span class="font-medium text-gray-900 w-32 shrink-0">${esc(a.account_number)}</span>
+            <span class="text-gray-500 shrink-0">${esc(a.entity)} · ${esc(a.provider)}</span>
+            <span class="ml-auto text-xs text-gray-400 text-right">${esc(detail)}</span>
+          </label>`;
+        }).join('');
       }
       list.querySelectorAll('.acct-dl-cb').forEach((cb) => {
         cb.addEventListener('change', () => {
@@ -2353,29 +2409,39 @@
           updateAcctDlSummary();
         });
       });
+      renderAcctDlHint(shown);
       updateAcctDlSummary();
+    }
+
+    // The exact invoice files that will be downloaded: ticked accounts that
+    // are currently listed, and only their listed invoices.
+    function acctDlPickedInvoices() {
+      return acctDlShownAccounts()
+        .filter((a) => acctDlSelected.has(a.account_number))
+        .flatMap((a) => a.invoices);
     }
 
     function updateAcctDlSummary() {
       const shown = acctDlShownAccounts();
       const picked = shown.filter((a) => acctDlSelected.has(a.account_number));
-      const fileCount = picked.reduce((sum, a) => sum + a.count, 0);
-      el('acctDlSummary').textContent = `${picked.length} account(s) selected · ${fileCount} invoice(s)`;
+      const files = picked.reduce((sum, a) => sum + a.invoices.length, 0);
+      el('acctDlSummary').textContent = `${picked.length} account(s) selected · ${files} invoice(s)`;
       el('acctDlGo').disabled = picked.length === 0;
-      el('acctDlGo').textContent = picked.length ? `Download ${fileCount} invoice(s)` : 'Download';
+      el('acctDlGo').textContent = picked.length ? `Download ${files} invoice(s)` : 'Download';
       el('acctDlSelectAll').checked = shown.length > 0 && picked.length === shown.length;
     }
 
-    async function openAcctDlModal(prefill = {}) {
+    async function openAcctDlModal(mode, prefill = {}) {
       if (!archiveInvoices.length) await loadArchive();
+      acctDlMode = mode;
       const uniq = (key) => [...new Set(archiveInvoices.map((inv) => inv[key]))].sort();
       acctDlFillSelect('acctDlEntity', uniq('entity'), 'All Entities');
       acctDlFillSelect('acctDlCarrier', uniq('provider'), 'All Carriers');
       acctDlFillSelect('acctDlMonth', uniq('month'), 'All Months', (m) => m.replace(/_/g, ' '));
       el('acctDlEntity').value = prefill.entity || '';
       el('acctDlCarrier').value = prefill.provider || '';
-      el('acctDlMonth').value = prefill.month || '';
-      el('acctDlStatus').value = prefill.status || '';
+      el('acctDlMonth').value = '';
+      el('acctDlStatus').value = '';
       el('acctDlSearch').value = '';
       acctDlSelected.clear();
       if (prefill.account) acctDlSelected.add(prefill.account);
@@ -2399,33 +2465,53 @@
     });
     el('acctDlClose').addEventListener('click', closeAcctDlModal);
     el('acctDlCancel').addEventListener('click', closeAcctDlModal);
-    el('acctDlGo').addEventListener('click', () => {
-      const accounts = acctDlShownAccounts()
-        .map((a) => a.account_number)
-        .filter((n) => acctDlSelected.has(n));
-      if (!accounts.length) return;
-      const params = new URLSearchParams();
-      if (el('acctDlEntity').value) params.set('entity', el('acctDlEntity').value);
-      if (el('acctDlCarrier').value) params.set('provider', el('acctDlCarrier').value);
-      if (el('acctDlMonth').value) params.set('month', el('acctDlMonth').value);
-      if (el('acctDlStatus').value) params.set('status', el('acctDlStatus').value);
-      params.set('account_numbers', accounts.join(','));
-      window.location.href = `${API}/api/download-all?${params.toString()}`;
-      closeAcctDlModal();
+    el('acctDlGo').addEventListener('click', async () => {
+      const invoices = acctDlPickedInvoices().map((inv) => ({
+        entity: inv.entity, provider: inv.provider, account_number: inv.account_number,
+        month: inv.month, status: inv.status, filename: inv.filename,
+      }));
+      if (!invoices.length) return;
+      const button = el('acctDlGo');
+      const label = button.textContent;
+      button.disabled = true;
+      button.textContent = 'Preparing zip…';
+      try {
+        const res = await fetch(`${API}/api/download-selected`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ invoices }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || 'Download failed.');
+        }
+        const disposition = res.headers.get('content-disposition') || '';
+        const match = disposition.match(/filename="?([^"]+)"?/);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = match ? match[1] : 'invoices.zip';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        closeAcctDlModal();
+        showBanner(`Downloaded ${invoices.length} invoice(s).`, 'success');
+      } catch (e) {
+        showBanner(e.message, 'error');
+      } finally {
+        button.textContent = label;
+        updateAcctDlSummary();
+      }
     });
 
     el('downloadByAccountBtn').addEventListener('click', () => {
       el('downloadAllMenu').classList.add('hidden');
-      openAcctDlModal({ entity: activeEntity, provider: activeCarrier, account: accountFilterValue });
+      openAcctDlModal('dashboard', { entity: activeEntity, provider: activeCarrier, account: accountFilterValue });
     });
     el('archiveDownloadBtn').addEventListener('click', () => {
-      openAcctDlModal({
-        entity: archiveEntityFilter,
-        provider: archiveCarrierFilter,
-        month: el('archiveMonthFilter').value,
-        status: el('archiveStatusFilter').value,
-        account: archiveAccountFilter,
-      });
+      openAcctDlModal('archive', { account: archiveAccountFilter });
     });
 
     let searchDebounce = null;

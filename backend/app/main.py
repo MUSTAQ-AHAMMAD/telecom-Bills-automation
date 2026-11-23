@@ -40,6 +40,7 @@ from .master_data import (
 from .models import (
     Analytics, JobStatus, OtpSubmission, CarrierAnalytics, EntityAnalytics, LocationAnalytics,
     BranchAnalytics, RefreshRequest, MasterAccountInput, OracleSyncRequest, InvoiceRef, InvoiceAmountInput, BulkSyncRequest,
+    DownloadSelectedRequest,
 )
 from .config import oracle_settings, save_oracle_settings
 from . import oracle_sync
@@ -570,9 +571,31 @@ def download_all(
         name_parts.append(f"{len(wanted_accounts)}_accounts")
     filename = "_".join(part.lower() for part in name_parts + ["invoices"]) + ".zip"
 
+    return _zip_invoices(invoices, filename)
+
+
+@app.post("/api/download-selected")
+def download_selected(request: DownloadSelectedRequest):
+    """
+    Zips exactly the invoice files the client lists (entity/carrier/account/
+    month/status/filename, as returned by /api/invoices) — no server-side
+    re-filtering, so the zip always matches what the user ticked in the
+    account-download picker. Each path is validated against DOWNLOAD_ROOT.
+    """
+    invoices = [inv.model_dump() for inv in request.invoices]
+    if not invoices:
+        raise HTTPException(status_code=400, detail="No invoices selected.")
+    accounts = {inv["account_number"] for inv in invoices}
+    label = next(iter(accounts)) if len(accounts) == 1 else f"{len(accounts)}_accounts"
+    return _zip_invoices(invoices, f"{label}_invoices.zip")
+
+
+def _zip_invoices(invoices: list, filename: str) -> FileResponse:
+    """Writes the given archived invoices flat into one zip and returns it."""
     tmp_dir = tempfile.mkdtemp()
     archive_path = os.path.join(tmp_dir, filename)
     used_names: set = set()
+    written = 0
     with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for inv in invoices:
             src = resolve_archived_invoice_path(
@@ -589,7 +612,10 @@ def download_all(
                 arcname = f"{base} ({suffix}){ext}"
             used_names.add(arcname)
             zf.write(src, arcname)
+            written += 1
 
+    if not written:
+        raise HTTPException(status_code=404, detail="None of the selected invoice files were found on disk.")
     return FileResponse(archive_path, filename=filename, media_type="application/zip")
 
 
