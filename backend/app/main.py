@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings, ENTITY_NAMES, CARRIER_NAMES, ENTITY_COLORS, CARRIER_COLORS, list_account_slots
 from .data_store import load_accounts, clear_accounts, account_slot_index, lookup_account_slot
-from .file_organizer import list_archived_invoices, resolve_archived_invoice_path, clear_all_invoices
+from .file_organizer import list_archived_invoices, resolve_archived_invoice_path, clear_all_invoices, clear_old_invoices
 from .jobs import job_manager
 from . import live_control
 from .master_data import (
@@ -518,8 +518,25 @@ def clear_data():
     return result
 
 
+@app.post("/api/data/clear-old")
+def clear_old_data():
+    """
+    Permanently deletes every invoice month older than each account's latest
+    downloaded month, keeping only the newest bill per account. Irreversible
+    — the frontend must confirm first. Leaves accounts.json and master.db
+    untouched.
+    """
+    return clear_old_invoices()
+
+
 @app.get("/api/download-all")
-def download_all(entity: Optional[str] = None, provider: Optional[str] = None, status: Optional[str] = None):
+def download_all(
+    entity: Optional[str] = None,
+    provider: Optional[str] = None,
+    status: Optional[str] = None,
+    account_numbers: Optional[str] = None,
+    month: Optional[str] = None,
+):
     """
     Zips every matching invoice PDF flat — just the files, no Entity/Carrier/
     Account/Month/Bills/Status folder structure — since that's what people
@@ -534,13 +551,23 @@ def download_all(entity: Optional[str] = None, provider: Optional[str] = None, s
     if provider and provider not in CARRIER_NAMES:
         raise HTTPException(status_code=400, detail=f"Unknown carrier '{provider}'.")
 
-    invoices = list_archived_invoices(entity=entity, provider=provider)
+    # Optional comma-separated list of account numbers, so specific accounts
+    # can be bulk-downloaded together (Dashboard / Invoice Archive picker).
+    wanted_accounts = {a.strip() for a in (account_numbers or "").split(",") if a.strip()}
+
+    invoices = list_archived_invoices(entity=entity, provider=provider, month=month or None)
     if status:
         invoices = [inv for inv in invoices if inv["status"] == status]
+    if wanted_accounts:
+        invoices = [inv for inv in invoices if inv["account_number"] in wanted_accounts]
     if not invoices:
         raise HTTPException(status_code=404, detail="No downloaded invoices match that selection.")
 
-    name_parts = [p for p in (entity, provider, status) if p]
+    name_parts = [p for p in (entity, provider, month, status) if p]
+    if len(wanted_accounts) == 1:
+        name_parts.append(next(iter(wanted_accounts)))
+    elif wanted_accounts:
+        name_parts.append(f"{len(wanted_accounts)}_accounts")
     filename = "_".join(part.lower() for part in name_parts + ["invoices"]) + ".zip"
 
     tmp_dir = tempfile.mkdtemp()

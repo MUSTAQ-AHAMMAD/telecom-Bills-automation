@@ -187,3 +187,60 @@ def clear_all_invoices() -> dict:
         shutil.rmtree(root)
     os.makedirs(root, exist_ok=True)
     return {"files_deleted": files_deleted}
+
+
+def _parse_month_folder(month_folder: str):
+    """'August_2026' -> datetime(2026, 8, 1); None if the folder name isn't a Month_Year."""
+    for fmt in ("%B_%Y", "%b_%Y"):
+        try:
+            return datetime.strptime(month_folder, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def clear_old_invoices() -> dict:
+    """
+    Keeps only the most recent month's invoices per entity+carrier+account
+    and permanently deletes every older Month_Year folder. "Latest" is
+    decided per account (not globally), so an account whose newest bill is
+    from last month still keeps that one. Folders whose names can't be
+    parsed as Month_Year are left alone. Does NOT touch accounts.json or
+    master.db.
+    """
+    root = os.path.abspath(settings.download_root)
+    files_deleted = 0
+    months_deleted = 0
+    if not os.path.isdir(root):
+        return {"files_deleted": 0, "months_deleted": 0}
+
+    for ent in os.listdir(root):
+        entity_dir = os.path.join(root, ent)
+        if not os.path.isdir(entity_dir):
+            continue
+        for prov in os.listdir(entity_dir):
+            prov_dir = os.path.join(entity_dir, prov)
+            if not os.path.isdir(prov_dir):
+                continue
+            for acct in os.listdir(prov_dir):
+                acct_dir = os.path.join(prov_dir, acct)
+                if not os.path.isdir(acct_dir):
+                    continue
+
+                dated = []
+                for month_folder in os.listdir(acct_dir):
+                    month_dir = os.path.join(acct_dir, month_folder)
+                    parsed = _parse_month_folder(month_folder)
+                    if parsed and os.path.isdir(month_dir):
+                        dated.append((parsed, month_dir))
+                if len(dated) <= 1:
+                    continue
+
+                dated.sort(reverse=True)
+                for _parsed, month_dir in dated[1:]:
+                    for _dirpath, _dirnames, filenames in os.walk(month_dir):
+                        files_deleted += len(filenames)
+                    shutil.rmtree(month_dir)
+                    months_deleted += 1
+
+    return {"files_deleted": files_deleted, "months_deleted": months_deleted}

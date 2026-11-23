@@ -103,9 +103,9 @@ dropdown menu (View bill PDF summary / View bill PDF details / **View Tax
 invoice** / Multiple bills download). The modal also has a bill-cycle
 selector ("Selected bill: `<Month, Year>`" with Previous/Next arrow
 buttons) for browsing past billing cycles. Set `STC_MONTHS_TO_FETCH` in
-`.env` (default 3) to walk backward through that many previous months per
+`.env` (default 1) to walk backward through that many previous months per
 account, each downloaded into its own real `Month_Year` folder read
-straight from that label — set it to `1` to only fetch the current bill.
+straight from that label — leave it at `1` to only fetch the current bill.
 
 **Known caveat**: I could inspect the dropdown menu's markup (confirming
 `STC_SELECTOR_INVOICE_MENU_ITEM_TEXT=Tax invoice` is the right item to
